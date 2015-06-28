@@ -1,0 +1,2509 @@
+From 4a24d896b650e1c91ab84ac21d89a214eb1f0704 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Rapha=C3=ABl=20Lallement?= <raphael.lallement@laas.fr>
+Date: Tue, 28 Apr 2015 10:01:44 +0200
+Subject: [PATCH 1/1] [ASTUPS] Use the CMake build system instead of the
+ "build" file provided
+
+The goal is to remove the need for super-user rights.
+
+Modify some source file to improve features/cope better with the new
+build system/and so on.
+---
+ CMakeLists.txt                 |  18 +++
+ build                          | 174 --------------------
+ devLib/piFaceOld.c             | 178 ---------------------
+ gpio/CMakeLists.txt            |  62 ++++++++
+ gpio/gpio.1                    | 354 -----------------------------------------
+ gpio/gpio.1.GERT.in            | 346 ++++++++++++++++++++++++++++++++++++++++
+ gpio/gpio.1.GRET-PIFACE.in     | 354 +++++++++++++++++++++++++++++++++++++++++
+ gpio/gpio.1.PIFACE.in          | 329 ++++++++++++++++++++++++++++++++++++++
+ gpio/gpio.1.in                 | 322 +++++++++++++++++++++++++++++++++++++
+ gpio/gpio.c                    |  28 +++-
+ gpio/version.h                 |   2 +-
+ wiringPi/CMakeLists.txt        |  28 ++++
+ wiringPi/FindwiringPi.cmake.in | 103 ++++++++++++
+ wiringPi/wiringPi.pc.in        |  11 ++
+ 14 files changed, 1595 insertions(+), 714 deletions(-)
+ create mode 100644 CMakeLists.txt
+ delete mode 100755 build
+ delete mode 100644 devLib/piFaceOld.c
+ create mode 100644 gpio/CMakeLists.txt
+ delete mode 100644 gpio/gpio.1
+ create mode 100644 gpio/gpio.1.GERT.in
+ create mode 100644 gpio/gpio.1.GRET-PIFACE.in
+ create mode 100644 gpio/gpio.1.PIFACE.in
+ create mode 100644 gpio/gpio.1.in
+ create mode 100644 wiringPi/CMakeLists.txt
+ create mode 100644 wiringPi/FindwiringPi.cmake.in
+ create mode 100644 wiringPi/wiringPi.pc.in
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+new file mode 100644
+index 0000000..7b08d5d
+--- /dev/null
++++ b/CMakeLists.txt
+@@ -0,0 +1,18 @@
++cmake_minimum_required(VERSION 2.8)
++project(wiringPi)
++
++#Handle the RPATH (to allow the binary to work if the libraries are not installed
++#in a system dir)
++set(CMAKE_SKIP_BUILD_RPATH  FALSE)
++set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
++set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
++set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
++list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
++if("${isSystemDir}" STREQUAL "-1")
++	set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
++endif("${isSystemDir}" STREQUAL "-1")
++
++set(BUILD_SUPBARTS ON) #Tells the subparts that they are build together
++
++add_subdirectory(wiringPi)
++add_subdirectory(gpio)
+diff --git a/build b/build
+deleted file mode 100755
+index d38ad1b..0000000
+--- a/build
++++ /dev/null
+@@ -1,174 +0,0 @@
+-#!/bin/sh
+-
+-# build
+-#	Simple wiringPi build and install script
+-#
+-#	Copyright (c) 2012-2015 Gordon Henderson
+-#################################################################################
+-# This file is part of wiringPi:
+-#	Wiring Compatable library for the Raspberry Pi
+-#
+-#    wiringPi is free software: you can redistribute it and/or modify
+-#    it under the terms of the GNU Lesser General Public License as published by
+-#    the Free Software Foundation, either version 3 of the License, or
+-#    (at your option) any later version.
+-#
+-#    wiringPi is distributed in the hope that it will be useful,
+-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-#    GNU Lesser General Public License for more details.
+-#
+-#    You should have received a copy of the GNU Lesser General Public License
+-#    along with wiringPi.  If not, see <http://www.gnu.org/licenses/>.
+-#################################################################################
+-#
+-# wiringPi is designed to run on a Raspberry Pi only.
+-#	However if you're clever enough to actually look at this script to
+-#	see why it's not building for you, then good luck.
+-#
+-#	To everyone else: Stop using cheap alternatives. Support the
+-#	Raspberry Pi Foundation	as they're the only ones putting money
+-#	back into education!
+-#################################################################################
+-
+-check_make_ok() {
+-  if [ $? != 0 ]; then
+-    echo ""
+-    echo "Make Failed..."
+-    echo "Please check the messages and fix any problems. If you're still stuck,"
+-    echo "then please email all the output and as many details as you can to"
+-    echo "  projects@drogon.net"
+-    echo ""
+-    exit 1
+-  fi
+-}
+-
+-if [ x$1 = "xclean" ]; then
+-  cd wiringPi
+-  echo -n "wiringPi:   "	; make clean
+-  cd ../devLib
+-  echo -n "DevLib:     "	; make clean
+-  cd ../gpio
+-  echo -n "gpio:       "	; make clean
+-  cd ../examples
+-  echo -n "Examples:   "	; make clean
+-  cd Gertboard
+-  echo -n "Gertboard:  "	; make clean
+-  cd ../PiFace
+-  echo -n "PiFace:     "	; make clean
+-  cd ../q2w
+-  echo -n "Quick2Wire: "	; make clean
+-  cd ../PiGlow
+-  echo -n "PiGlow:     "	; make clean
+-  exit
+-fi
+-
+-if [ x$1 = "xuninstall" ]; then
+-  cd wiringPi
+-  echo -n "wiringPi: " ; sudo make uninstall
+-  cd ../devLib
+-  echo -n "DevLib:   " ; sudo make uninstall
+-  cd ../gpio
+-  echo -n "gpio:     " ; sudo make uninstall
+-  exit
+-fi
+-
+-# Only if you know what you're doing!
+-
+-if [ x$1 = "xdebian" ]; then
+-  here=`pwd`
+-  cd debian/wiringPi
+-  rm -rf usr
+-  cd $here/wiringPi
+-  make install-deb
+-  cd $here/devLib
+-  make install-deb
+-  cd $here/gpio
+-  make install-deb
+-  cd $here/debian
+-  fakeroot dpkg-deb --build wiringPi
+-  mv wiringPi.deb  wiringpi-`cat $here/VERSION`-1.deb
+-  exit
+-fi
+-
+-if [ x$1 != "x" ]; then
+-  echo "Usage: $0 [clean | uninstall]"
+-  exit 1
+-fi
+-
+-  echo "wiringPi Build script"
+-  echo "====================="
+-  echo
+-
+-  hardware=`fgrep Hardware /proc/cpuinfo | head -1 | awk '{ print $3 }'`
+-
+-#  if [ x$hardware != "xBCM2708" ]; then
+-#    echo ""
+-#    echo "   +------------------------------------------------------------+"
+-#    echo "   |   wiringPi is designed to run on the Raspberry Pi only.    |"
+-#    echo "   |   This processor does not appear to be a Raspberry Pi.     |"
+-#    echo "   +------------------------------------------------------------+"
+-#    echo "   | In the unlikely event that you think it is a Raspberry Pi, |"
+-#    echo "   | then please accept my apologies and email the contents of  |"
+-#    echo "   | /proc/cpuinfo to projects@drogon.net.                      |"
+-#    echo "   |    - Thanks, Gordon                                        |"
+-#    echo "   +------------------------------------------------------------+"
+-#    echo ""
+-#    exit 1
+-#  fi
+-
+-
+-  echo
+-  echo "WiringPi Library"
+-  cd wiringPi
+-  sudo make uninstall
+-  if [ x$1 = "xstatic" ]; then
+-    make -j5 static
+-    check_make_ok
+-    sudo make install-static
+-  else
+-    make -j5
+-    check_make_ok
+-    sudo make install
+-  fi
+-  check_make_ok
+-
+-  echo
+-  echo "WiringPi Devices Library"
+-  cd ../devLib
+-  sudo make uninstall
+-  if [ x$1 = "xstatic" ]; then
+-    make -j5 static
+-    check_make_ok
+-    sudo make install-static
+-  else
+-    make -j5
+-    check_make_ok
+-    sudo make install
+-  fi
+-  check_make_ok
+-
+-  echo
+-  echo "GPIO Utility"
+-  cd ../gpio
+-  make -j5
+-  check_make_ok
+-  sudo make install
+-  check_make_ok
+-
+-# echo
+-# echo "Examples"
+-# cd ../examples
+-# make
+-# cd ..
+-
+-echo
+-echo All Done.
+-echo ""
+-echo "NOTE: To compile programs with wiringPi, you need to add:"
+-echo "    -lwiringPi"
+-echo "  to your compile line(s) To use the Gertboard, MaxDetect, etc."
+-echo "  code (the devLib), you need to also add:"
+-echo "    -lwiringPiDev"
+-echo "  to your compile line(s)."
+-echo ""
+diff --git a/devLib/piFaceOld.c b/devLib/piFaceOld.c
+deleted file mode 100644
+index 1b1c0dd..0000000
+--- a/devLib/piFaceOld.c
++++ /dev/null
+@@ -1,178 +0,0 @@
+-/*
+- * piFace.:
+- *	Arduino compatable (ish) Wiring library for the Raspberry Pi
+- *	Copyright (c) 2012-2013 Gordon Henderson
+- *
+- *	This file to interface with the PiFace peripheral device which
+- *	has an MCP23S17 GPIO device connected via the SPI bus.
+- ***********************************************************************
+- * This file is part of wiringPi:
+- *	https://projects.drogon.net/raspberry-pi/wiringpi/
+- *
+- *    wiringPi is free software: you can redistribute it and/or modify
+- *    it under the terms of the GNU Lesser General Public License as
+- *    published by the Free Software Foundation, either version 3 of the
+- *    License, or (at your option) any later version.
+- *
+- *    wiringPi is distributed in the hope that it will be useful,
+- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *    GNU Lesser General Public License for more details.
+- *
+- *    You should have received a copy of the GNU Lesser General Public
+- *    License along with wiringPi.
+- *    If not, see <http://www.gnu.org/licenses/>.
+- ***********************************************************************
+- */
+-
+-
+-#include <stdio.h>
+-#include <stdint.h>
+-
+-#include <wiringPi.h>
+-#include <wiringPiSPI.h>
+-
+-#include "../wiringPi/mcp23x0817.h"
+-
+-#include "piFace.h"
+-
+-#define	PIFACE_SPEED	4000000
+-#define	PIFACE_DEVNO	0
+-
+-
+-
+-/*
+- * writeByte:
+- *	Write a byte to a register on the MCP23S17 on the SPI bus.
+- *********************************************************************************
+- */
+-
+-static void writeByte (uint8_t reg, uint8_t data)
+-{
+-  uint8_t spiData [4] ;
+-
+-  spiData [0] = CMD_WRITE ;
+-  spiData [1] = reg ;
+-  spiData [2] = data ;
+-
+-  wiringPiSPIDataRW (PIFACE_DEVNO, spiData, 3) ;
+-}
+-
+-/*
+- * readByte:
+- *	Read a byte from a register on the MCP23S17 on the SPI bus.
+- *********************************************************************************
+- */
+-
+-static uint8_t readByte (uint8_t reg)
+-{
+-  uint8_t spiData [4] ;
+-
+-  spiData [0] = CMD_READ ;
+-  spiData [1] = reg ;
+-
+-  wiringPiSPIDataRW (PIFACE_DEVNO, spiData, 3) ;
+-
+-  return spiData [2] ;
+-}
+-
+-
+-/*
+- * myDigitalWrite:
+- *	Perform the digitalWrite function on the PiFace board
+- *********************************************************************************
+- */
+-
+-void myDigitalWrite (struct wiringPiNodeStruct *node, int pin, int value)
+-{
+-  uint8_t mask, old ;
+-
+-  pin -= node->pinBase ;
+-  mask = 1 << pin ;
+-  old  = readByte (MCP23x17_GPIOA) ;
+-
+-  if (value == 0)
+-    old &= (~mask) ;
+-  else
+-    old |=   mask ;
+-
+-  writeByte (MCP23x17_GPIOA, old) ;
+-}
+-
+-
+-/*
+- * myDigitalRead:
+- *	Perform the digitalRead function on the PiFace board
+- *********************************************************************************
+- */
+-
+-int myDigitalRead (struct wiringPiNodeStruct *node, int pin)
+-{
+-  uint8_t mask, reg ;
+-
+-  mask = 1 << ((pin - node->pinBase) & 7) ;
+-
+-  if (pin < 8)
+-    reg = MCP23x17_GPIOB ;	// Input regsiter
+-  else
+-    reg = MCP23x17_OLATA ;	// Output latch regsiter
+-
+-  if ((readByte (reg) & mask) != 0)
+-    return HIGH ;
+-  else
+-    return LOW ;
+-}
+-
+-
+-/*
+- * myPullUpDnControl:
+- *	Perform the pullUpDnControl function on the PiFace board
+- *********************************************************************************
+- */
+-
+-void myPullUpDnControl (struct wiringPiNodeStruct *node, int pin, int pud)
+-{
+-  uint8_t mask, old ;
+-
+-  mask = 1 << (pin - node->pinBase) ;
+-  old  = readByte (MCP23x17_GPPUB) ;
+-
+-  if (pud == 0)
+-    old &= (~mask) ;
+-  else
+-    old |=   mask ;
+-
+-  writeByte (MCP23x17_GPPUB, old) ;
+-}
+-
+-
+-/*
+- * piFaceSetup
+- *	Setup the SPI interface and initialise the MCP23S17 chip
+- *	We create one node with 16 pins - each if the first 8 pins being read
+- *	and write - although the operations actually go to different
+- *	hardware ports. The top 8 let you read the state of the output register.
+- *********************************************************************************
+- */
+-
+-int piFaceSetup (const int pinBase)
+-{
+-  int    x ;
+-  struct wiringPiNodeStruct *node ;
+-
+-  if ((x = wiringPiSPISetup (PIFACE_DEVNO, PIFACE_SPEED)) < 0)
+-    return x ;
+-
+-// Setup the MCP23S17
+-
+-  writeByte (MCP23x17_IOCON,  IOCON_INIT) ;
+-  writeByte (MCP23x17_IODIRA, 0x00) ;		// Port A -> Outputs
+-  writeByte (MCP23x17_IODIRB, 0xFF) ;		// Port B -> Inputs
+-
+-  node = wiringPiNewNode (pinBase, 16) ;
+-  node->digitalRead     = myDigitalRead ;
+-  node->digitalWrite    = myDigitalWrite ;
+-  node->pullUpDnControl = myPullUpDnControl ;
+-
+-  return 0 ;
+-}
+diff --git a/gpio/CMakeLists.txt b/gpio/CMakeLists.txt
+new file mode 100644
+index 0000000..5cb19b6
+--- /dev/null
++++ b/gpio/CMakeLists.txt
+@@ -0,0 +1,62 @@
++cmake_minimum_required(VERSION 2.8)
++project(gpio CXX C)
++
++#Read version number and use it
++execute_process(COMMAND ./newVersion
++		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
++		OUTPUT_QUIET
++		ERROR_QUIET)
++file(READ version.h FILE_CONTENT)
++string(REGEX MATCH "[0-9]*[.][0-9]*([.][0-9]*)?" VERSION_NUMBER ${FILE_CONTENT})
++message(STATUS "Version number: ${VERSION_NUMBER}")
++
++#Search for the wiringPi library
++if(BUILD_SUPBARTS)
++	find_package(Threads REQUIRED)
++	include_directories(../wiringPi)
++	set(LIBS wiringPi ${CMAKE_THREAD_LIBS_INIT})
++	link_directories(${CMAKE_BINARY_DIR}/wiringPi)
++else(BUILD_SUPBARTS)
++	find_package(wiringPi REQUIRED)
++	find_package(Threads REQUIRED)
++	include_directories(${wiringPi_INCLUDE_DIRS})
++	set(LIBS ${wiringPi_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
++endif(BUILD_SUPBARTS)
++
++#Create an option to link 'gpio' to the wiringPiDev library that offers the support
++#of the Gert board and PiFace board
++option(ENABLE_GERTBOARD_COMPATIBILITY "Enable the GertBoard capabilities (NOT AVAILABLE NOW)" OFF)
++if(ENABLE_GERTBOARD_COMPATIBILITY)
++	message(FATAL_ERROR "The \"ENABLE_GERTBOARD_COMPATIBILITY\" option is not available now")
++	add_definitions(-DENABLE_GERTBOARD_COMPATIBILITY)
++endif(ENABLE_GERTBOARD_COMPATIBILITY)
++option(ENABLE_PIFACE_COMPATIBILITY "Enable the PiFace capabilities (NOT AVAILABLE NOW)" OFF)
++if(ENABLE_PIFACE_COMPATIBILITY)
++	message(FATAL_ERROR "The \"ENABLE_PIFACE_COMPATIBILITY\" option is not available now")
++	add_definitions(-DENABLE_PIFACE_COMPATIBILITY)
++endif(ENABLE_PIFACE_COMPATIBILITY)
++
++#Compile the gpio binary and install it
++file(GLOB gpioSOURCES *.c)
++add_executable(gpio ${gpioSOURCES})
++target_link_libraries(gpio ${LIBS})
++set_target_properties(gpio PROPERTIES VERSION ${VERSION_NUMBER})
++install(TARGETS gpio RUNTIME DESTINATION bin)
++
++#Install the pintest binary
++install(PROGRAMS pintest DESTINATION bin)
++
++#Install the man page
++if(ENABLE_GERTBOARD_COMPATIBILITY AND ENABLE_PIFACE_COMPATIBILITY)
++	set(MAN_PAGE gpio.1.GERT-PIFACE.in)
++elseif(ENABLE_GERTBOARD_COMPATIBILITY)
++	set(MAN_PAGE gpio.1.GERT.in)
++elseif(ENABLE_PIFACE_COMPATIBILITY)
++	set(MAN_PAGE gpio.1.PIFACE.in)
++else(ENABLE_GERTBOARD_COMPATIBILITY AND ENABLE_PIFACE_COMPATIBILITY)
++	set(MAN_PAGE gpio.1.in)
++endif(ENABLE_GERTBOARD_COMPATIBILITY AND ENABLE_PIFACE_COMPATIBILITY)
++file(COPY ${MAN_PAGE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
++#file(RENAME ${CMAKE_CURRENT_BINARY_DIR}/${MAN_PAGE} ${CMAKE_CURRENT_BINARY_DIR}/gpio.1)
++install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${MAN_PAGE} DESTINATION share/man RENAME gpio.1)
++#install pintest in bin
+diff --git a/gpio/gpio.1 b/gpio/gpio.1
+deleted file mode 100644
+index 77b41bf..0000000
+--- a/gpio/gpio.1
++++ /dev/null
+@@ -1,354 +0,0 @@
+-.TH "GPIO" "January 2015" "Command-Line access to Raspberry Pi's GPIO"
+-
+-.SH NAME
+-gpio \- Command-line access to Raspberry Pi's GPIO
+-
+-.SH SYNOPSIS
+-.B gpio
+-.B \-v
+-.PP
+-.B gpio
+-.B [ \-g | \-1 ]
+-.B mode/read/write/aread/awrite/wb/pwm/clock ...
+-.PP
+-.B gpio
+-.B [ \-x extension:params ]
+-.B mode/read/write/aread/awrite/pwm/pwmTone ...
+-.PP
+-.B gpio
+-.B [ \-p ]
+-.B read/write/toggle/wb
+-.B ...
+-.PP
+-.B gpio
+-.B readall
+-.PP
+-.B gpio
+-.B unexportall/exports
+-.PP
+-.B gpio
+-.B export/edge/unexport
+-.B ...
+-.PP
+-.B gpio
+-.B wfi
+-.B ...
+-.PP
+-.B gpio
+-.B drive
+-group value
+-.PP
+-.B gpio
+-.B usbp
+-high | low
+-.PP
+-.B gpio
+-.B pwm-bal/pwm-ms
+-.PP
+-.B gpio
+-.B pwmr
+-range
+-.PP
+-.B gpio
+-.B load \ i2c/spi ...
+-.PP
+-.B gpio
+-.B gbr
+-channel
+-.PP
+-.B gpio
+-.B gbw
+-channel value
+-
+-.SH DESCRIPTION
+-
+-.B GPIO
+-is a swiss army knife of a command line tool to allow the user easy
+-access to the GPIO pins on the Raspberry Pi and the SPI A/D and D/A
+-converters on the Gertboard. It's designed for simple testing and
+-diagnostic purposes, but can be used in shell scripts for general if
+-somewhat slow control of the GPIO pins.
+-
+-It can also control the IO's on the PiFace IO board and load the SPI and I2C
+-kernel modules if required.
+-
+-Additionally, it can be used to set the exports in the \fI/sys/class/gpio\fR
+-system directory to allow subsequent programs to use the \fR/sys/class/gpio\fR
+-interface without needing to be run as root.
+-
+-.SH OPTIONS
+-
+-.TP
+-.B \-v
+-Output the current version including the board revision of the Raspberry Pi.
+-
+-.TP
+-.B \-g
+-Use the BCM_GPIO pins numbers rather than wiringPi pin numbers.
+-\fINote:\fR The BCM_GPIO pin numbers are always used with the 
+-export and edge commands.
+-
+-.TP
+-.B \-1
+-Use the physical pin numbers rather than wiringPi pin numbers.
+-\fINote:\fR that this applies to the P1 connector only. It is not possible to
+-use pins on the Revision 2 P5 connector this way, and as with \-g the
+-BCM_GPIO pin numbers are always used with the export and edge commands.
+-
+-.TP
+-.B \-x extension
+-This causes the named extension to be initialised. Extensions
+-comprise of a name (e.g. mcp23017) followed by a colon, then the
+-pin-base, then more optional parameters depending on the extension type.
+-See the web page on http://wiringpi.com/the-gpio-utility/
+-
+-.TP
+-.B \-p
+-Use the PiFace interface board and its corresponding pin numbers. The PiFace
+-will always appear at pin number 200 in the gpio command. You can assign any
+-pin numbers you like in your own programs though.
+-
+-.TP
+-.B read <pin>
+-Read the digital value of the given pin and print 0 or 1 to represent the
+-respective logic levels.
+-
+-.TP
+-.B write <pin> <value>
+-Write the given value (0 or 1) to the pin. You need to set the pin
+-to output mode first.
+-
+-.TP
+-.B aread <pin>
+-Read the analog value of the given pin. This needs to be uses in
+-conjunction with a -x flag to add in an extension that handles analog
+-inputs.  respective logic levels.
+-
+-e.g. gpio -x mcp3002:200:0 aread 200
+-
+-will read the first analog input on an mcp3002 SPI ADC chip.
+-
+-.TP
+-.B awrite <pin> <value>
+-Write the analog value to the given pin. This needs to be used in
+-conjunction with a -x flag to add in an extension that handles analog
+-inputs.  respective logic levels.
+-
+-e.g. gpio -x mcp4802:200:0 awrite 200 128
+-
+-will write the value 128 to the first DAC port on an mcp4802 chip on
+-the Pi's SPI bus 0.
+-
+-
+-.TP
+-.B wb <value>
+-Write the given byte to the 8 main GPIO pins. You can prefix it with 0x
+-to specify a hexadecimal number. You need to set pins to output mode
+-first.
+-
+-.TP
+-.B readall
+-Output a table of all GPIO pins values. The values represent the actual values read
+-if the pin is in input mode, or the last value written if the pin is in output
+-mode.
+-
+-The readall command is usable with an extension module (via the -x parameter),
+-but it's unable to determine pin modes or states, so will perform both a
+-digital and analog read on each pin in-turn.
+-
+-.TP
+-.B pwm <pin> <value>
+-Write a PWM value (0-1023) to the given pin. The pin needs to be put
+-into PWM mode first.
+-
+-.TP
+-.B clock <pin> <frequency>
+-Set the output frequency on the given pin. The pin needs to be put into
+-clock mode first.
+-
+-.TP
+-.B mode <pin> <mode>
+-Set a pin into \fIinput\fR, \fIoutput\fR or \fIpwm\fR mode. Can also
+-use the literals \fIup\fR, \fIdown\fR or \fItri\fR to set the internal
+-pull-up, pull-down or tristate (off) controls.
+-
+-The ALT modes can also be set using \fIalt0\fR, \fIalt1\fR,  ... \fIalt5\fR.
+-
+-.TP
+-.B unexportall
+-Un-Export all the GPIO pins in the /sys/class/gpio directory.
+-
+-.TP
+-.B exports
+-Print a list (if any) of all the exported GPIO pins and their current values.
+-
+-.TP
+-.B export
+-Export a GPIO pin in the \fI/sys/class/gpio\fR directory. Use like the
+-mode command above however only \fIin\fR, \fIout\fR, \fIhigh\fR and
+-\fRlow\fR are supported at this time. Note that the pin number is the
+-\fBBCM_GPIO\fR number and not the wiringPi number. The \fIhigh\fR and
+-\fIlow\fR commands pre-set the output value at the same time as the
+-export to output mode.
+-
+-Once a GPIO pin has been exported, the \fBgpio\fR program changes the
+-ownership of the \fI/sys/class/gpio/gpioX/value\fR and if present in
+-later kernels, the \fI/sys/class/gpio/gpioX/edge\fR pseudo files to
+-that of the user running the \fBgpio\fR program. This means that you
+-can have a small script of gpio exports to setup the gpio pins as your
+-program requires without the need to run anything as root, or with the
+-sudo command.
+-
+-.TP
+-.B edge
+-This exports a GPIO pin in the \fI/sys/class/gpio\fR directory, set
+-the direction to input and set the edge interrupt method to \fInone\fR,
+-\fIrising\fR, \fIfalling\fR or \fIboth\fR.  Use like the export command
+-above and note that \fBBCM_GPIO\fR pin number is used not not wiringPi pin
+-numbering.
+-
+-Like the export commands above, ownership is set to that of the 
+-calling user, allowing subsequent access from user programs without
+-requiring root/sudo.
+-
+-.TP
+-.B unexport
+-Un-Export a GPIO pin in the /sys/class/gpio directory.
+-
+-.TP
+-.B wfi <pin> <mode>
+-This set the given pin to the supplied interrupt mode: rising, falling
+-or both then waits for the interrupt to happen. It's a non-busy wait,
+-so does not consume and CPU while it's waiting.
+-
+-.TP
+-.B drive
+-group value
+-
+-Change the pad driver value for the given pad group to the supplied drive
+-value. Group is 0, 1 or 2 and value is 0-7. Do not use unless you are
+-absolutely sure you know what you're doing.
+-
+-.TP
+-.B usbp
+-high | low
+-
+-Change the USB current limiter to high (1.2 amps) or low (the default, 600mA)
+-This is only applicable to the model B+
+-
+-.TP
+-.B pwm-bal/pwm-ms 
+-Change the PWM mode to balanced (the default) or mark:space ratio (traditional)
+-
+-.TP
+-.B pwmr
+-Change the PWM range register. The default is 1024.
+-
+-.TP
+-.B load i2c [baudrate]
+-This loads the i2c or drivers into the kernel and changes the permissions
+-on the associated /dev/ entries so that the current user has access to
+-them. Optionally it will set the I2C baudrate to that supplied in Kb/sec
+-(or as close as the Pi can manage) The default speed is 100Kb/sec.
+-
+-Note that on a Pi with a recent 3.18 kernel with the device-tree structure
+-enable, the load may fail until you add:
+-
+-.I dtparam=i2c=on
+-
+-into \fB/boot/config.txt\fR to allow user use of the I2C bus.
+-
+-.TP
+-.B load spi
+-This loads the spi drivers into the kernel and changes the permissions
+-on the associated /dev/ entries so that the current user has access to
+-them. It used to have the ability to change the buffer size from the
+-default of 4096 bytes to an arbitary value, however for some time the
+-Pi Foundation have compiled the SPI device driver into the kernel and
+-this has fixed the buffer size. The way to change it now is to edit
+-the /boot/cmdline.txt file and add on spdev.bufsiz=8192 to set it to
+-e.g. 8192 bytes then reboot.
+-
+-Note that on a Pi with a recent 3.18 kernel with the device-tree structure
+-enable, the load may fail until you add:
+-
+-.I dtparam=spi=on
+-
+-into \fB/boot/config.txt\fR to allow user use of the I2C bus.
+-
+-.TP
+-.B gbr
+-channel
+-
+-This reads the analog to digital converter on the Gertboard on the given
+-channel. The board jumpers need to be in-place to do this operation.
+-
+-.TP
+-.B gbw
+-channel value
+-
+-This writes the supplied value to the output channel on the Gertboards
+-SPI digital to analogue converter.
+-The board jumpers need to be in-place to do this operation.
+-
+-
+-.SH "WiringPi vs. BCM_GPIO Pin numbering vs. Physical pin numbering"
+-
+-.PP
+-The quickest way to get a list of the pin differences is to run the command
+-.TP
+-gpio readall
+-
+-.SH FILES
+-
+-.TP 2.2i
+-.I gpio
+-executable
+-
+-.SH EXAMPLES
+-.TP 2.2i
+-gpio mode 4 output # Set pin 4 to output
+-.PP
+-gpio -g mode 23 output # Set GPIO pin 23 to output (same as WiringPi pin 4)
+-.PP
+-gpio mode 1 pwm # Set pin 1 to PWM mode
+-.PP
+-gpio pwm 1 512 # Set pin 1 to PWM value 512 - half brightness
+-.PP
+-gpio export 17 out # Set GPIO Pin 17 to output
+-.PP
+-gpio export 0 in # Set GPIO Pin 0 (SDA0) to input.
+-.PP
+-gpio -g read 0 # Read GPIO Pin 0 (SDA0)
+-
+-.SH "NOTES"
+-
+-When using the \fIexport\fR, \fIedge\fR or \fIunexport\fR commands, the
+-pin numbers are \fBalways\fR native BCM_GPIO numbers and never wiringPi
+-pin numbers.
+-
+-.SH "SEE ALSO"
+-
+-.LP
+-WiringPi's home page
+-.IP
+-http://wiringpi.com/
+-
+-.SH AUTHOR
+-
+-Gordon Henderson
+-
+-.SH "REPORTING BUGS"
+-
+-Please report bugs to <projects@drogon.net>
+-
+-.SH COPYRIGHT
+-
+-Copyright (c) 2012-2015 Gordon Henderson
+-This is free software; see the source for copying conditions. There is NO
+-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+-
+-.SH TRADEMARKS AND ACKNOWLEDGEMENTS
+-
+-Raspberry Pi is a trademark of the Raspberry Pi Foundation. See
+-http://raspberrypi.org/ for full details.
+diff --git a/gpio/gpio.1.GERT.in b/gpio/gpio.1.GERT.in
+new file mode 100644
+index 0000000..e7d82fe
+--- /dev/null
++++ b/gpio/gpio.1.GERT.in
+@@ -0,0 +1,346 @@
++.TH "GPIO" "January 2015" "Command-Line access to Raspberry Pi's GPIO"
++
++.SH NAME
++gpio \- Command-line access to Raspberry Pi's GPIO
++
++.SH SYNOPSIS
++.B gpio
++.B \-v
++.PP
++.B gpio
++.B [ \-g | \-1 ]
++.B mode/read/write/aread/awrite/wb/pwm/clock ...
++.PP
++.B gpio
++.B [ \-x extension:params ]
++.B mode/read/write/aread/awrite/pwm/pwmTone ...
++.PP
++.B gpio
++.B read/write/toggle/wb
++.B ...
++.PP
++.B gpio
++.B readall
++.PP
++.B gpio
++.B unexportall/exports
++.PP
++.B gpio
++.B export/edge/unexport
++.B ...
++.PP
++.B gpio
++.B wfi
++.B ...
++.PP
++.B gpio
++.B drive
++group value
++.PP
++.B gpio
++.B usbp
++high | low
++.PP
++.B gpio
++.B pwm-bal/pwm-ms
++.PP
++.B gpio
++.B pwmr
++range
++.PP
++.B gpio
++.B load \ i2c/spi ...
++.PP
++.B gpio
++.B gbr
++channel
++.PP
++.B gpio
++.B gbw
++channel value
++
++.SH DESCRIPTION
++
++.B GPIO
++is a swiss army knife of a command line tool to allow the user easy
++access to the GPIO pins on the Raspberry Pi and the SPI A/D and D/A
++converters on the Gertboard. It's designed for simple testing and
++diagnostic purposes, but can be used in shell scripts for general if
++somewhat slow control of the GPIO pins.
++
++It can also load the SPI and I2C kernel modules if required.
++
++Additionally, it can be used to set the exports in the \fI/sys/class/gpio\fR
++system directory to allow subsequent programs to use the \fR/sys/class/gpio\fR
++interface without needing to be run as root.
++
++.SH OPTIONS
++
++.TP
++.B \-v
++Output the current version including the board revision of the Raspberry Pi.
++
++.TP
++.B \-g
++Use the BCM_GPIO pins numbers rather than wiringPi pin numbers.
++\fINote:\fR The BCM_GPIO pin numbers are always used with the 
++export and edge commands.
++
++.TP
++.B \-1
++Use the physical pin numbers rather than wiringPi pin numbers.
++\fINote:\fR that this applies to the P1 connector only. It is not possible to
++use pins on the Revision 2 P5 connector this way, and as with \-g the
++BCM_GPIO pin numbers are always used with the export and edge commands.
++
++.TP
++.B \-x extension
++This causes the named extension to be initialised. Extensions
++comprise of a name (e.g. mcp23017) followed by a colon, then the
++pin-base, then more optional parameters depending on the extension type.
++See the web page on http://wiringpi.com/the-gpio-utility/
++
++.TP
++.B read <pin>
++Read the digital value of the given pin and print 0 or 1 to represent the
++respective logic levels.
++
++.TP
++.B write <pin> <value>
++Write the given value (0 or 1) to the pin. You need to set the pin
++to output mode first.
++
++.TP
++.B aread <pin>
++Read the analog value of the given pin. This needs to be uses in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp3002:200:0 aread 200
++
++will read the first analog input on an mcp3002 SPI ADC chip.
++
++.TP
++.B awrite <pin> <value>
++Write the analog value to the given pin. This needs to be used in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp4802:200:0 awrite 200 128
++
++will write the value 128 to the first DAC port on an mcp4802 chip on
++the Pi's SPI bus 0.
++
++
++.TP
++.B wb <value>
++Write the given byte to the 8 main GPIO pins. You can prefix it with 0x
++to specify a hexadecimal number. You need to set pins to output mode
++first.
++
++.TP
++.B readall
++Output a table of all GPIO pins values. The values represent the actual values read
++if the pin is in input mode, or the last value written if the pin is in output
++mode.
++
++The readall command is usable with an extension module (via the -x parameter),
++but it's unable to determine pin modes or states, so will perform both a
++digital and analog read on each pin in-turn.
++
++.TP
++.B pwm <pin> <value>
++Write a PWM value (0-1023) to the given pin. The pin needs to be put
++into PWM mode first.
++
++.TP
++.B clock <pin> <frequency>
++Set the output frequency on the given pin. The pin needs to be put into
++clock mode first.
++
++.TP
++.B mode <pin> <mode>
++Set a pin into \fIinput\fR, \fIoutput\fR or \fIpwm\fR mode. Can also
++use the literals \fIup\fR, \fIdown\fR or \fItri\fR to set the internal
++pull-up, pull-down or tristate (off) controls.
++
++The ALT modes can also be set using \fIalt0\fR, \fIalt1\fR,  ... \fIalt5\fR.
++
++.TP
++.B unexportall
++Un-Export all the GPIO pins in the /sys/class/gpio directory.
++
++.TP
++.B exports
++Print a list (if any) of all the exported GPIO pins and their current values.
++
++.TP
++.B export
++Export a GPIO pin in the \fI/sys/class/gpio\fR directory. Use like the
++mode command above however only \fIin\fR, \fIout\fR, \fIhigh\fR and
++\fRlow\fR are supported at this time. Note that the pin number is the
++\fBBCM_GPIO\fR number and not the wiringPi number. The \fIhigh\fR and
++\fIlow\fR commands pre-set the output value at the same time as the
++export to output mode.
++
++Once a GPIO pin has been exported, the \fBgpio\fR program changes the
++ownership of the \fI/sys/class/gpio/gpioX/value\fR and if present in
++later kernels, the \fI/sys/class/gpio/gpioX/edge\fR pseudo files to
++that of the user running the \fBgpio\fR program. This means that you
++can have a small script of gpio exports to setup the gpio pins as your
++program requires without the need to run anything as root, or with the
++sudo command.
++
++.TP
++.B edge
++This exports a GPIO pin in the \fI/sys/class/gpio\fR directory, set
++the direction to input and set the edge interrupt method to \fInone\fR,
++\fIrising\fR, \fIfalling\fR or \fIboth\fR.  Use like the export command
++above and note that \fBBCM_GPIO\fR pin number is used not not wiringPi pin
++numbering.
++
++Like the export commands above, ownership is set to that of the 
++calling user, allowing subsequent access from user programs without
++requiring root/sudo.
++
++.TP
++.B unexport
++Un-Export a GPIO pin in the /sys/class/gpio directory.
++
++.TP
++.B wfi <pin> <mode>
++This set the given pin to the supplied interrupt mode: rising, falling
++or both then waits for the interrupt to happen. It's a non-busy wait,
++so does not consume and CPU while it's waiting.
++
++.TP
++.B drive
++group value
++
++Change the pad driver value for the given pad group to the supplied drive
++value. Group is 0, 1 or 2 and value is 0-7. Do not use unless you are
++absolutely sure you know what you're doing.
++
++.TP
++.B usbp
++high | low
++
++Change the USB current limiter to high (1.2 amps) or low (the default, 600mA)
++This is only applicable to the model B+
++
++.TP
++.B pwm-bal/pwm-ms 
++Change the PWM mode to balanced (the default) or mark:space ratio (traditional)
++
++.TP
++.B pwmr
++Change the PWM range register. The default is 1024.
++
++.TP
++.B load i2c [baudrate]
++This loads the i2c or drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. Optionally it will set the I2C baudrate to that supplied in Kb/sec
++(or as close as the Pi can manage) The default speed is 100Kb/sec.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=i2c=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.TP
++.B load spi
++This loads the spi drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. It used to have the ability to change the buffer size from the
++default of 4096 bytes to an arbitary value, however for some time the
++Pi Foundation have compiled the SPI device driver into the kernel and
++this has fixed the buffer size. The way to change it now is to edit
++the /boot/cmdline.txt file and add on spdev.bufsiz=8192 to set it to
++e.g. 8192 bytes then reboot.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=spi=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.TP
++.B gbr
++channel
++
++This reads the analog to digital converter on the Gertboard on the given
++channel. The board jumpers need to be in-place to do this operation.
++
++.TP
++.B gbw
++channel value
++
++This writes the supplied value to the output channel on the Gertboards
++SPI digital to analogue converter.
++The board jumpers need to be in-place to do this operation.
++
++
++.SH "WiringPi vs. BCM_GPIO Pin numbering vs. Physical pin numbering"
++
++.PP
++The quickest way to get a list of the pin differences is to run the command
++.TP
++gpio readall
++
++.SH FILES
++
++.TP 2.2i
++.I gpio
++executable
++
++.SH EXAMPLES
++.TP 2.2i
++gpio mode 4 output # Set pin 4 to output
++.PP
++gpio -g mode 23 output # Set GPIO pin 23 to output (same as WiringPi pin 4)
++.PP
++gpio mode 1 pwm # Set pin 1 to PWM mode
++.PP
++gpio pwm 1 512 # Set pin 1 to PWM value 512 - half brightness
++.PP
++gpio export 17 out # Set GPIO Pin 17 to output
++.PP
++gpio export 0 in # Set GPIO Pin 0 (SDA0) to input.
++.PP
++gpio -g read 0 # Read GPIO Pin 0 (SDA0)
++
++.SH "NOTES"
++
++When using the \fIexport\fR, \fIedge\fR or \fIunexport\fR commands, the
++pin numbers are \fBalways\fR native BCM_GPIO numbers and never wiringPi
++pin numbers.
++
++.SH "SEE ALSO"
++
++.LP
++WiringPi's home page
++.IP
++http://wiringpi.com/
++
++.SH AUTHOR
++
++Gordon Henderson
++
++.SH "REPORTING BUGS"
++
++Please report bugs to <projects@drogon.net>
++
++.SH COPYRIGHT
++
++Copyright (c) 2012-2015 Gordon Henderson
++This is free software; see the source for copying conditions. There is NO
++warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
++
++.SH TRADEMARKS AND ACKNOWLEDGEMENTS
++
++Raspberry Pi is a trademark of the Raspberry Pi Foundation. See
++http://raspberrypi.org/ for full details.
+diff --git a/gpio/gpio.1.GRET-PIFACE.in b/gpio/gpio.1.GRET-PIFACE.in
+new file mode 100644
+index 0000000..77b41bf
+--- /dev/null
++++ b/gpio/gpio.1.GRET-PIFACE.in
+@@ -0,0 +1,354 @@
++.TH "GPIO" "January 2015" "Command-Line access to Raspberry Pi's GPIO"
++
++.SH NAME
++gpio \- Command-line access to Raspberry Pi's GPIO
++
++.SH SYNOPSIS
++.B gpio
++.B \-v
++.PP
++.B gpio
++.B [ \-g | \-1 ]
++.B mode/read/write/aread/awrite/wb/pwm/clock ...
++.PP
++.B gpio
++.B [ \-x extension:params ]
++.B mode/read/write/aread/awrite/pwm/pwmTone ...
++.PP
++.B gpio
++.B [ \-p ]
++.B read/write/toggle/wb
++.B ...
++.PP
++.B gpio
++.B readall
++.PP
++.B gpio
++.B unexportall/exports
++.PP
++.B gpio
++.B export/edge/unexport
++.B ...
++.PP
++.B gpio
++.B wfi
++.B ...
++.PP
++.B gpio
++.B drive
++group value
++.PP
++.B gpio
++.B usbp
++high | low
++.PP
++.B gpio
++.B pwm-bal/pwm-ms
++.PP
++.B gpio
++.B pwmr
++range
++.PP
++.B gpio
++.B load \ i2c/spi ...
++.PP
++.B gpio
++.B gbr
++channel
++.PP
++.B gpio
++.B gbw
++channel value
++
++.SH DESCRIPTION
++
++.B GPIO
++is a swiss army knife of a command line tool to allow the user easy
++access to the GPIO pins on the Raspberry Pi and the SPI A/D and D/A
++converters on the Gertboard. It's designed for simple testing and
++diagnostic purposes, but can be used in shell scripts for general if
++somewhat slow control of the GPIO pins.
++
++It can also control the IO's on the PiFace IO board and load the SPI and I2C
++kernel modules if required.
++
++Additionally, it can be used to set the exports in the \fI/sys/class/gpio\fR
++system directory to allow subsequent programs to use the \fR/sys/class/gpio\fR
++interface without needing to be run as root.
++
++.SH OPTIONS
++
++.TP
++.B \-v
++Output the current version including the board revision of the Raspberry Pi.
++
++.TP
++.B \-g
++Use the BCM_GPIO pins numbers rather than wiringPi pin numbers.
++\fINote:\fR The BCM_GPIO pin numbers are always used with the 
++export and edge commands.
++
++.TP
++.B \-1
++Use the physical pin numbers rather than wiringPi pin numbers.
++\fINote:\fR that this applies to the P1 connector only. It is not possible to
++use pins on the Revision 2 P5 connector this way, and as with \-g the
++BCM_GPIO pin numbers are always used with the export and edge commands.
++
++.TP
++.B \-x extension
++This causes the named extension to be initialised. Extensions
++comprise of a name (e.g. mcp23017) followed by a colon, then the
++pin-base, then more optional parameters depending on the extension type.
++See the web page on http://wiringpi.com/the-gpio-utility/
++
++.TP
++.B \-p
++Use the PiFace interface board and its corresponding pin numbers. The PiFace
++will always appear at pin number 200 in the gpio command. You can assign any
++pin numbers you like in your own programs though.
++
++.TP
++.B read <pin>
++Read the digital value of the given pin and print 0 or 1 to represent the
++respective logic levels.
++
++.TP
++.B write <pin> <value>
++Write the given value (0 or 1) to the pin. You need to set the pin
++to output mode first.
++
++.TP
++.B aread <pin>
++Read the analog value of the given pin. This needs to be uses in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp3002:200:0 aread 200
++
++will read the first analog input on an mcp3002 SPI ADC chip.
++
++.TP
++.B awrite <pin> <value>
++Write the analog value to the given pin. This needs to be used in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp4802:200:0 awrite 200 128
++
++will write the value 128 to the first DAC port on an mcp4802 chip on
++the Pi's SPI bus 0.
++
++
++.TP
++.B wb <value>
++Write the given byte to the 8 main GPIO pins. You can prefix it with 0x
++to specify a hexadecimal number. You need to set pins to output mode
++first.
++
++.TP
++.B readall
++Output a table of all GPIO pins values. The values represent the actual values read
++if the pin is in input mode, or the last value written if the pin is in output
++mode.
++
++The readall command is usable with an extension module (via the -x parameter),
++but it's unable to determine pin modes or states, so will perform both a
++digital and analog read on each pin in-turn.
++
++.TP
++.B pwm <pin> <value>
++Write a PWM value (0-1023) to the given pin. The pin needs to be put
++into PWM mode first.
++
++.TP
++.B clock <pin> <frequency>
++Set the output frequency on the given pin. The pin needs to be put into
++clock mode first.
++
++.TP
++.B mode <pin> <mode>
++Set a pin into \fIinput\fR, \fIoutput\fR or \fIpwm\fR mode. Can also
++use the literals \fIup\fR, \fIdown\fR or \fItri\fR to set the internal
++pull-up, pull-down or tristate (off) controls.
++
++The ALT modes can also be set using \fIalt0\fR, \fIalt1\fR,  ... \fIalt5\fR.
++
++.TP
++.B unexportall
++Un-Export all the GPIO pins in the /sys/class/gpio directory.
++
++.TP
++.B exports
++Print a list (if any) of all the exported GPIO pins and their current values.
++
++.TP
++.B export
++Export a GPIO pin in the \fI/sys/class/gpio\fR directory. Use like the
++mode command above however only \fIin\fR, \fIout\fR, \fIhigh\fR and
++\fRlow\fR are supported at this time. Note that the pin number is the
++\fBBCM_GPIO\fR number and not the wiringPi number. The \fIhigh\fR and
++\fIlow\fR commands pre-set the output value at the same time as the
++export to output mode.
++
++Once a GPIO pin has been exported, the \fBgpio\fR program changes the
++ownership of the \fI/sys/class/gpio/gpioX/value\fR and if present in
++later kernels, the \fI/sys/class/gpio/gpioX/edge\fR pseudo files to
++that of the user running the \fBgpio\fR program. This means that you
++can have a small script of gpio exports to setup the gpio pins as your
++program requires without the need to run anything as root, or with the
++sudo command.
++
++.TP
++.B edge
++This exports a GPIO pin in the \fI/sys/class/gpio\fR directory, set
++the direction to input and set the edge interrupt method to \fInone\fR,
++\fIrising\fR, \fIfalling\fR or \fIboth\fR.  Use like the export command
++above and note that \fBBCM_GPIO\fR pin number is used not not wiringPi pin
++numbering.
++
++Like the export commands above, ownership is set to that of the 
++calling user, allowing subsequent access from user programs without
++requiring root/sudo.
++
++.TP
++.B unexport
++Un-Export a GPIO pin in the /sys/class/gpio directory.
++
++.TP
++.B wfi <pin> <mode>
++This set the given pin to the supplied interrupt mode: rising, falling
++or both then waits for the interrupt to happen. It's a non-busy wait,
++so does not consume and CPU while it's waiting.
++
++.TP
++.B drive
++group value
++
++Change the pad driver value for the given pad group to the supplied drive
++value. Group is 0, 1 or 2 and value is 0-7. Do not use unless you are
++absolutely sure you know what you're doing.
++
++.TP
++.B usbp
++high | low
++
++Change the USB current limiter to high (1.2 amps) or low (the default, 600mA)
++This is only applicable to the model B+
++
++.TP
++.B pwm-bal/pwm-ms 
++Change the PWM mode to balanced (the default) or mark:space ratio (traditional)
++
++.TP
++.B pwmr
++Change the PWM range register. The default is 1024.
++
++.TP
++.B load i2c [baudrate]
++This loads the i2c or drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. Optionally it will set the I2C baudrate to that supplied in Kb/sec
++(or as close as the Pi can manage) The default speed is 100Kb/sec.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=i2c=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.TP
++.B load spi
++This loads the spi drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. It used to have the ability to change the buffer size from the
++default of 4096 bytes to an arbitary value, however for some time the
++Pi Foundation have compiled the SPI device driver into the kernel and
++this has fixed the buffer size. The way to change it now is to edit
++the /boot/cmdline.txt file and add on spdev.bufsiz=8192 to set it to
++e.g. 8192 bytes then reboot.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=spi=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.TP
++.B gbr
++channel
++
++This reads the analog to digital converter on the Gertboard on the given
++channel. The board jumpers need to be in-place to do this operation.
++
++.TP
++.B gbw
++channel value
++
++This writes the supplied value to the output channel on the Gertboards
++SPI digital to analogue converter.
++The board jumpers need to be in-place to do this operation.
++
++
++.SH "WiringPi vs. BCM_GPIO Pin numbering vs. Physical pin numbering"
++
++.PP
++The quickest way to get a list of the pin differences is to run the command
++.TP
++gpio readall
++
++.SH FILES
++
++.TP 2.2i
++.I gpio
++executable
++
++.SH EXAMPLES
++.TP 2.2i
++gpio mode 4 output # Set pin 4 to output
++.PP
++gpio -g mode 23 output # Set GPIO pin 23 to output (same as WiringPi pin 4)
++.PP
++gpio mode 1 pwm # Set pin 1 to PWM mode
++.PP
++gpio pwm 1 512 # Set pin 1 to PWM value 512 - half brightness
++.PP
++gpio export 17 out # Set GPIO Pin 17 to output
++.PP
++gpio export 0 in # Set GPIO Pin 0 (SDA0) to input.
++.PP
++gpio -g read 0 # Read GPIO Pin 0 (SDA0)
++
++.SH "NOTES"
++
++When using the \fIexport\fR, \fIedge\fR or \fIunexport\fR commands, the
++pin numbers are \fBalways\fR native BCM_GPIO numbers and never wiringPi
++pin numbers.
++
++.SH "SEE ALSO"
++
++.LP
++WiringPi's home page
++.IP
++http://wiringpi.com/
++
++.SH AUTHOR
++
++Gordon Henderson
++
++.SH "REPORTING BUGS"
++
++Please report bugs to <projects@drogon.net>
++
++.SH COPYRIGHT
++
++Copyright (c) 2012-2015 Gordon Henderson
++This is free software; see the source for copying conditions. There is NO
++warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
++
++.SH TRADEMARKS AND ACKNOWLEDGEMENTS
++
++Raspberry Pi is a trademark of the Raspberry Pi Foundation. See
++http://raspberrypi.org/ for full details.
+diff --git a/gpio/gpio.1.PIFACE.in b/gpio/gpio.1.PIFACE.in
+new file mode 100644
+index 0000000..8960679
+--- /dev/null
++++ b/gpio/gpio.1.PIFACE.in
+@@ -0,0 +1,329 @@
++.TH "GPIO" "January 2015" "Command-Line access to Raspberry Pi's GPIO"
++
++.SH NAME
++gpio \- Command-line access to Raspberry Pi's GPIO
++
++.SH SYNOPSIS
++.B gpio
++.B \-v
++.PP
++.B gpio
++.B [ \-g | \-1 ]
++.B mode/read/write/aread/awrite/wb/pwm/clock ...
++.PP
++.B gpio
++.B [ \-x extension:params ]
++.B mode/read/write/aread/awrite/pwm/pwmTone ...
++.PP
++.B gpio
++.B [ \-p ]
++.B read/write/toggle/wb
++.B ...
++.PP
++.B gpio
++.B readall
++.PP
++.B gpio
++.B unexportall/exports
++.PP
++.B gpio
++.B export/edge/unexport
++.B ...
++.PP
++.B gpio
++.B wfi
++.B ...
++.PP
++.B gpio
++.B drive
++group value
++.PP
++.B gpio
++.B usbp
++high | low
++.PP
++.B gpio
++.B pwm-bal/pwm-ms
++.PP
++.B gpio
++.B pwmr
++range
++.PP
++.B gpio
++.B load \ i2c/spi ...
++
++.SH DESCRIPTION
++
++.B GPIO
++is a swiss army knife of a command line tool to allow the user easy
++access to the GPIO pins on the Raspberry Pi and the SPI. It's designed for
++simple testing and diagnostic purposes, but can be used in shell scripts
++for general if somewhat slow control of the GPIO pins.
++
++It can also control the IO's on the PiFace IO board and load the SPI and I2C
++kernel modules if required.
++
++Additionally, it can be used to set the exports in the \fI/sys/class/gpio\fR
++system directory to allow subsequent programs to use the \fR/sys/class/gpio\fR
++interface without needing to be run as root.
++
++.SH OPTIONS
++
++.TP
++.B \-v
++Output the current version including the board revision of the Raspberry Pi.
++
++.TP
++.B \-g
++Use the BCM_GPIO pins numbers rather than wiringPi pin numbers.
++\fINote:\fR The BCM_GPIO pin numbers are always used with the 
++export and edge commands.
++
++.TP
++.B \-1
++Use the physical pin numbers rather than wiringPi pin numbers.
++\fINote:\fR that this applies to the P1 connector only. It is not possible to
++use pins on the Revision 2 P5 connector this way, and as with \-g the
++BCM_GPIO pin numbers are always used with the export and edge commands.
++
++.TP
++.B \-x extension
++This causes the named extension to be initialised. Extensions
++comprise of a name (e.g. mcp23017) followed by a colon, then the
++pin-base, then more optional parameters depending on the extension type.
++See the web page on http://wiringpi.com/the-gpio-utility/
++
++.TP
++.B \-p
++Use the PiFace interface board and its corresponding pin numbers. The PiFace
++will always appear at pin number 200 in the gpio command. You can assign any
++pin numbers you like in your own programs though.
++
++.TP
++.B read <pin>
++Read the digital value of the given pin and print 0 or 1 to represent the
++respective logic levels.
++
++.TP
++.B write <pin> <value>
++Write the given value (0 or 1) to the pin. You need to set the pin
++to output mode first.
++
++.TP
++.B aread <pin>
++Read the analog value of the given pin. This needs to be uses in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp3002:200:0 aread 200
++
++will read the first analog input on an mcp3002 SPI ADC chip.
++
++.TP
++.B awrite <pin> <value>
++Write the analog value to the given pin. This needs to be used in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp4802:200:0 awrite 200 128
++
++will write the value 128 to the first DAC port on an mcp4802 chip on
++the Pi's SPI bus 0.
++
++
++.TP
++.B wb <value>
++Write the given byte to the 8 main GPIO pins. You can prefix it with 0x
++to specify a hexadecimal number. You need to set pins to output mode
++first.
++
++.TP
++.B readall
++Output a table of all GPIO pins values. The values represent the actual values read
++if the pin is in input mode, or the last value written if the pin is in output
++mode.
++
++The readall command is usable with an extension module (via the -x parameter),
++but it's unable to determine pin modes or states, so will perform both a
++digital and analog read on each pin in-turn.
++
++.TP
++.B pwm <pin> <value>
++Write a PWM value (0-1023) to the given pin. The pin needs to be put
++into PWM mode first.
++
++.TP
++.B clock <pin> <frequency>
++Set the output frequency on the given pin. The pin needs to be put into
++clock mode first.
++
++.TP
++.B mode <pin> <mode>
++Set a pin into \fIinput\fR, \fIoutput\fR or \fIpwm\fR mode. Can also
++use the literals \fIup\fR, \fIdown\fR or \fItri\fR to set the internal
++pull-up, pull-down or tristate (off) controls.
++
++The ALT modes can also be set using \fIalt0\fR, \fIalt1\fR,  ... \fIalt5\fR.
++
++.TP
++.B unexportall
++Un-Export all the GPIO pins in the /sys/class/gpio directory.
++
++.TP
++.B exports
++Print a list (if any) of all the exported GPIO pins and their current values.
++
++.TP
++.B export
++Export a GPIO pin in the \fI/sys/class/gpio\fR directory. Use like the
++mode command above however only \fIin\fR, \fIout\fR, \fIhigh\fR and
++\fRlow\fR are supported at this time. Note that the pin number is the
++\fBBCM_GPIO\fR number and not the wiringPi number. The \fIhigh\fR and
++\fIlow\fR commands pre-set the output value at the same time as the
++export to output mode.
++
++Once a GPIO pin has been exported, the \fBgpio\fR program changes the
++ownership of the \fI/sys/class/gpio/gpioX/value\fR and if present in
++later kernels, the \fI/sys/class/gpio/gpioX/edge\fR pseudo files to
++that of the user running the \fBgpio\fR program. This means that you
++can have a small script of gpio exports to setup the gpio pins as your
++program requires without the need to run anything as root, or with the
++sudo command.
++
++.TP
++.B edge
++This exports a GPIO pin in the \fI/sys/class/gpio\fR directory, set
++the direction to input and set the edge interrupt method to \fInone\fR,
++\fIrising\fR, \fIfalling\fR or \fIboth\fR.  Use like the export command
++above and note that \fBBCM_GPIO\fR pin number is used not not wiringPi pin
++numbering.
++
++Like the export commands above, ownership is set to that of the 
++calling user, allowing subsequent access from user programs without
++requiring root/sudo.
++
++.TP
++.B unexport
++Un-Export a GPIO pin in the /sys/class/gpio directory.
++
++.TP
++.B wfi <pin> <mode>
++This set the given pin to the supplied interrupt mode: rising, falling
++or both then waits for the interrupt to happen. It's a non-busy wait,
++so does not consume and CPU while it's waiting.
++
++.TP
++.B drive
++group value
++
++Change the pad driver value for the given pad group to the supplied drive
++value. Group is 0, 1 or 2 and value is 0-7. Do not use unless you are
++absolutely sure you know what you're doing.
++
++.TP
++.B usbp
++high | low
++
++Change the USB current limiter to high (1.2 amps) or low (the default, 600mA)
++This is only applicable to the model B+
++
++.TP
++.B pwm-bal/pwm-ms 
++Change the PWM mode to balanced (the default) or mark:space ratio (traditional)
++
++.TP
++.B pwmr
++Change the PWM range register. The default is 1024.
++
++.TP
++.B load i2c [baudrate]
++This loads the i2c or drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. Optionally it will set the I2C baudrate to that supplied in Kb/sec
++(or as close as the Pi can manage) The default speed is 100Kb/sec.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=i2c=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.TP
++.B load spi
++This loads the spi drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. It used to have the ability to change the buffer size from the
++default of 4096 bytes to an arbitary value, however for some time the
++Pi Foundation have compiled the SPI device driver into the kernel and
++this has fixed the buffer size. The way to change it now is to edit
++the /boot/cmdline.txt file and add on spdev.bufsiz=8192 to set it to
++e.g. 8192 bytes then reboot.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=spi=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.SH "WiringPi vs. BCM_GPIO Pin numbering vs. Physical pin numbering"
++
++.PP
++The quickest way to get a list of the pin differences is to run the command
++.TP
++gpio readall
++
++.SH FILES
++
++.TP 2.2i
++.I gpio
++executable
++
++.SH EXAMPLES
++.TP 2.2i
++gpio mode 4 output # Set pin 4 to output
++.PP
++gpio -g mode 23 output # Set GPIO pin 23 to output (same as WiringPi pin 4)
++.PP
++gpio mode 1 pwm # Set pin 1 to PWM mode
++.PP
++gpio pwm 1 512 # Set pin 1 to PWM value 512 - half brightness
++.PP
++gpio export 17 out # Set GPIO Pin 17 to output
++.PP
++gpio export 0 in # Set GPIO Pin 0 (SDA0) to input.
++.PP
++gpio -g read 0 # Read GPIO Pin 0 (SDA0)
++
++.SH "NOTES"
++
++When using the \fIexport\fR, \fIedge\fR or \fIunexport\fR commands, the
++pin numbers are \fBalways\fR native BCM_GPIO numbers and never wiringPi
++pin numbers.
++
++.SH "SEE ALSO"
++
++.LP
++WiringPi's home page
++.IP
++http://wiringpi.com/
++
++.SH AUTHOR
++
++Gordon Henderson
++
++.SH "REPORTING BUGS"
++
++Please report bugs to <projects@drogon.net>
++
++.SH COPYRIGHT
++
++Copyright (c) 2012-2015 Gordon Henderson
++This is free software; see the source for copying conditions. There is NO
++warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
++
++.SH TRADEMARKS AND ACKNOWLEDGEMENTS
++
++Raspberry Pi is a trademark of the Raspberry Pi Foundation. See
++http://raspberrypi.org/ for full details.
+diff --git a/gpio/gpio.1.in b/gpio/gpio.1.in
+new file mode 100644
+index 0000000..c32f1bb
+--- /dev/null
++++ b/gpio/gpio.1.in
+@@ -0,0 +1,322 @@
++.TH "GPIO" "January 2015" "Command-Line access to Raspberry Pi's GPIO"
++
++.SH NAME
++gpio \- Command-line access to Raspberry Pi's GPIO
++
++.SH SYNOPSIS
++.B gpio
++.B \-v
++.PP
++.B gpio
++.B [ \-g | \-1 ]
++.B mode/read/write/aread/awrite/wb/pwm/clock ...
++.PP
++.B gpio
++.B [ \-x extension:params ]
++.B mode/read/write/aread/awrite/pwm/pwmTone ...
++.PP
++.B gpio
++.B read/write/toggle/wb
++.B ...
++.PP
++.B gpio
++.B readall
++.PP
++.B gpio
++.B unexportall/exports
++.PP
++.B gpio
++.B export/edge/unexport
++.B ...
++.PP
++.B gpio
++.B wfi
++.B ...
++.PP
++.B gpio
++.B drive
++group value
++.PP
++.B gpio
++.B usbp
++high | low
++.PP
++.B gpio
++.B pwm-bal/pwm-ms
++.PP
++.B gpio
++.B pwmr
++range
++.PP
++.B gpio
++.B load \ i2c/spi ...
++
++
++.SH DESCRIPTION
++
++.B GPIO
++is a swiss army knife of a command line tool to allow the user easy
++access to the GPIO pins on the Raspberry Pi and the SPI. It's designed for
++simple testing and diagnostic purposes, but can be used in shell scripts
++for general if somewhat slow control of the GPIO pins.
++
++It can also load the SPI and I2C kernel modules if required.
++
++Additionally, it can be used to set the exports in the \fI/sys/class/gpio\fR
++system directory to allow subsequent programs to use the \fR/sys/class/gpio\fR
++interface without needing to be run as root.
++
++.SH OPTIONS
++
++.TP
++.B \-v
++Output the current version including the board revision of the Raspberry Pi.
++
++.TP
++.B \-g
++Use the BCM_GPIO pins numbers rather than wiringPi pin numbers.
++\fINote:\fR The BCM_GPIO pin numbers are always used with the 
++export and edge commands.
++
++.TP
++.B \-1
++Use the physical pin numbers rather than wiringPi pin numbers.
++\fINote:\fR that this applies to the P1 connector only. It is not possible to
++use pins on the Revision 2 P5 connector this way, and as with \-g the
++BCM_GPIO pin numbers are always used with the export and edge commands.
++
++.TP
++.B \-x extension
++This causes the named extension to be initialised. Extensions
++comprise of a name (e.g. mcp23017) followed by a colon, then the
++pin-base, then more optional parameters depending on the extension type.
++See the web page on http://wiringpi.com/the-gpio-utility/
++
++.TP
++.B read <pin>
++Read the digital value of the given pin and print 0 or 1 to represent the
++respective logic levels.
++
++.TP
++.B write <pin> <value>
++Write the given value (0 or 1) to the pin. You need to set the pin
++to output mode first.
++
++.TP
++.B aread <pin>
++Read the analog value of the given pin. This needs to be uses in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp3002:200:0 aread 200
++
++will read the first analog input on an mcp3002 SPI ADC chip.
++
++.TP
++.B awrite <pin> <value>
++Write the analog value to the given pin. This needs to be used in
++conjunction with a -x flag to add in an extension that handles analog
++inputs.  respective logic levels.
++
++e.g. gpio -x mcp4802:200:0 awrite 200 128
++
++will write the value 128 to the first DAC port on an mcp4802 chip on
++the Pi's SPI bus 0.
++
++
++.TP
++.B wb <value>
++Write the given byte to the 8 main GPIO pins. You can prefix it with 0x
++to specify a hexadecimal number. You need to set pins to output mode
++first.
++
++.TP
++.B readall
++Output a table of all GPIO pins values. The values represent the actual values read
++if the pin is in input mode, or the last value written if the pin is in output
++mode.
++
++The readall command is usable with an extension module (via the -x parameter),
++but it's unable to determine pin modes or states, so will perform both a
++digital and analog read on each pin in-turn.
++
++.TP
++.B pwm <pin> <value>
++Write a PWM value (0-1023) to the given pin. The pin needs to be put
++into PWM mode first.
++
++.TP
++.B clock <pin> <frequency>
++Set the output frequency on the given pin. The pin needs to be put into
++clock mode first.
++
++.TP
++.B mode <pin> <mode>
++Set a pin into \fIinput\fR, \fIoutput\fR or \fIpwm\fR mode. Can also
++use the literals \fIup\fR, \fIdown\fR or \fItri\fR to set the internal
++pull-up, pull-down or tristate (off) controls.
++
++The ALT modes can also be set using \fIalt0\fR, \fIalt1\fR,  ... \fIalt5\fR.
++
++.TP
++.B unexportall
++Un-Export all the GPIO pins in the /sys/class/gpio directory.
++
++.TP
++.B exports
++Print a list (if any) of all the exported GPIO pins and their current values.
++
++.TP
++.B export
++Export a GPIO pin in the \fI/sys/class/gpio\fR directory. Use like the
++mode command above however only \fIin\fR, \fIout\fR, \fIhigh\fR and
++\fRlow\fR are supported at this time. Note that the pin number is the
++\fBBCM_GPIO\fR number and not the wiringPi number. The \fIhigh\fR and
++\fIlow\fR commands pre-set the output value at the same time as the
++export to output mode.
++
++Once a GPIO pin has been exported, the \fBgpio\fR program changes the
++ownership of the \fI/sys/class/gpio/gpioX/value\fR and if present in
++later kernels, the \fI/sys/class/gpio/gpioX/edge\fR pseudo files to
++that of the user running the \fBgpio\fR program. This means that you
++can have a small script of gpio exports to setup the gpio pins as your
++program requires without the need to run anything as root, or with the
++sudo command.
++
++.TP
++.B edge
++This exports a GPIO pin in the \fI/sys/class/gpio\fR directory, set
++the direction to input and set the edge interrupt method to \fInone\fR,
++\fIrising\fR, \fIfalling\fR or \fIboth\fR.  Use like the export command
++above and note that \fBBCM_GPIO\fR pin number is used not not wiringPi pin
++numbering.
++
++Like the export commands above, ownership is set to that of the 
++calling user, allowing subsequent access from user programs without
++requiring root/sudo.
++
++.TP
++.B unexport
++Un-Export a GPIO pin in the /sys/class/gpio directory.
++
++.TP
++.B wfi <pin> <mode>
++This set the given pin to the supplied interrupt mode: rising, falling
++or both then waits for the interrupt to happen. It's a non-busy wait,
++so does not consume and CPU while it's waiting.
++
++.TP
++.B drive
++group value
++
++Change the pad driver value for the given pad group to the supplied drive
++value. Group is 0, 1 or 2 and value is 0-7. Do not use unless you are
++absolutely sure you know what you're doing.
++
++.TP
++.B usbp
++high | low
++
++Change the USB current limiter to high (1.2 amps) or low (the default, 600mA)
++This is only applicable to the model B+
++
++.TP
++.B pwm-bal/pwm-ms 
++Change the PWM mode to balanced (the default) or mark:space ratio (traditional)
++
++.TP
++.B pwmr
++Change the PWM range register. The default is 1024.
++
++.TP
++.B load i2c [baudrate]
++This loads the i2c or drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. Optionally it will set the I2C baudrate to that supplied in Kb/sec
++(or as close as the Pi can manage) The default speed is 100Kb/sec.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=i2c=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.TP
++.B load spi
++This loads the spi drivers into the kernel and changes the permissions
++on the associated /dev/ entries so that the current user has access to
++them. It used to have the ability to change the buffer size from the
++default of 4096 bytes to an arbitary value, however for some time the
++Pi Foundation have compiled the SPI device driver into the kernel and
++this has fixed the buffer size. The way to change it now is to edit
++the /boot/cmdline.txt file and add on spdev.bufsiz=8192 to set it to
++e.g. 8192 bytes then reboot.
++
++Note that on a Pi with a recent 3.18 kernel with the device-tree structure
++enable, the load may fail until you add:
++
++.I dtparam=spi=on
++
++into \fB/boot/config.txt\fR to allow user use of the I2C bus.
++
++.SH "WiringPi vs. BCM_GPIO Pin numbering vs. Physical pin numbering"
++
++.PP
++The quickest way to get a list of the pin differences is to run the command
++.TP
++gpio readall
++
++.SH FILES
++
++.TP 2.2i
++.I gpio
++executable
++
++.SH EXAMPLES
++.TP 2.2i
++gpio mode 4 output # Set pin 4 to output
++.PP
++gpio -g mode 23 output # Set GPIO pin 23 to output (same as WiringPi pin 4)
++.PP
++gpio mode 1 pwm # Set pin 1 to PWM mode
++.PP
++gpio pwm 1 512 # Set pin 1 to PWM value 512 - half brightness
++.PP
++gpio export 17 out # Set GPIO Pin 17 to output
++.PP
++gpio export 0 in # Set GPIO Pin 0 (SDA0) to input.
++.PP
++gpio -g read 0 # Read GPIO Pin 0 (SDA0)
++
++.SH "NOTES"
++
++When using the \fIexport\fR, \fIedge\fR or \fIunexport\fR commands, the
++pin numbers are \fBalways\fR native BCM_GPIO numbers and never wiringPi
++pin numbers.
++
++.SH "SEE ALSO"
++
++.LP
++WiringPi's home page
++.IP
++http://wiringpi.com/
++
++.SH AUTHOR
++
++Gordon Henderson
++
++.SH "REPORTING BUGS"
++
++Please report bugs to <projects@drogon.net>
++
++.SH COPYRIGHT
++
++Copyright (c) 2012-2015 Gordon Henderson
++This is free software; see the source for copying conditions. There is NO
++warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
++
++.SH TRADEMARKS AND ACKNOWLEDGEMENTS
++
++Raspberry Pi is a trademark of the Raspberry Pi Foundation. See
++http://raspberrypi.org/ for full details.
+diff --git a/gpio/gpio.c b/gpio/gpio.c
+index 6dc6113..b6768ea 100644
+--- a/gpio/gpio.c
++++ b/gpio/gpio.c
+@@ -37,9 +37,12 @@
+ #include <wiringPi.h>
+ #include <wpiExtensions.h>
+ 
++#ifdef ENABLE_GERTBOARD_COMPATIBILITY
+ #include <gertboard.h>
++#endif //ENABLE_GERTBOARD_COMPATIBILITY
++#ifdef ENABLE_PIFACE_COMPATIBILITY
+ #include <piFace.h>
+-
++#endif //ENABLE_PIFACE_COMPATIBILITY
+ #include "version.h"
+ 
+ extern int wiringPiDebug ;
+@@ -62,7 +65,11 @@ int wpMode ;
+ char *usage = "Usage: gpio -v\n"
+               "       gpio -h\n"
+               "       gpio [-g|-1] [-x extension:params] ...\n"
++#ifndef ENABLE_PIFACE_COMPATIBILITY
++              "       gpio <read/write/wb> ...\n"
++#else //ENABLE_PIFACE_COMPATIBILITY
+               "       gpio [-p] <read/write/wb> ...\n"
++#endif //ENABLE_PIFCAE_COMPATIBILITY
+               "       gpio <read/write/aread/awritewb/pwm/clock/mode> ...\n"
+ 	      "       gpio readall/reset\n"
+ 	      "       gpio unexportall/exports\n"
+@@ -75,9 +82,12 @@ char *usage = "Usage: gpio -v\n"
+ 	      "       gpio load spi/i2c\n"
+ 	      "       gpio unload spi/i2c\n"
+ 	      "       gpio i2cd/i2cdetect\n"
+-	      "       gpio usbp high/low\n"
+-	      "       gpio gbr <channel>\n"
+-	      "       gpio gbw <channel> <value>" ;	// No trailing newline needed here.
++	      "       gpio usbp high/low"
++#ifdef ENABLE_GERTBOARD_COMPATIBILITY
++	      "\n       gpio gbr <channel>\n"
++	      "       gpio gbw <channel> <value>"
++#endif //ENABLE_GERTBOARD_COMPATIBILITY
++	       ;	// No trailing newline needed here.
+ 
+ 
+ #ifdef	NOT_FOR_NOW
+@@ -784,7 +794,7 @@ static void doUsbP (int argc, char *argv [])
+   exit (1) ;
+ }
+ 
+-
++#ifdef ENABLE_GERTBOARD_COMPATIBILITY
+ /*
+  * doGbw:
+  *	gpio gbw channel value
+@@ -826,7 +836,6 @@ static void doGbw (int argc, char *argv [])
+   analogWrite (64 + channel, value) ;
+ }
+ 
+-
+ /*
+  * doGbr:
+  *	gpio gbr channel
+@@ -860,6 +869,7 @@ static void doGbr (int argc, char *argv [])
+ 
+   printf ("%d\n", analogRead (64 + channel)) ;
+ }
++#endif //ENABLE_GERTBOARD_COMPATIBILITY
+ 
+ 
+ /*
+@@ -1153,7 +1163,7 @@ int main (int argc, char *argv [])
+ 
+ // Help
+ 
+-  if (strcasecmp (argv [1], "-h") == 0)
++  if (strcasecmp (argv [1], "-h") == 0 || strcasecmp (argv [1], "--help") == 0)
+   {
+     printf ("%s: %s\n", argv [0], usage) ;
+     return 0 ;
+@@ -1238,10 +1248,12 @@ int main (int argc, char *argv [])
+   if (strcasecmp (argv [1], "load"   ) == 0)	{ doLoad   (argc, argv) ; return 0 ; }
+   if (strcasecmp (argv [1], "unload" ) == 0)	{ doUnLoad (argc, argv) ; return 0 ; }
+ 
++#ifdef ENABLE_GERTBOARD_COMPATIBILITY
+ // Gertboard commands
+ 
+   if (strcasecmp (argv [1], "gbr" ) == 0)	{ doGbr (argc, argv) ; return 0 ; }
+   if (strcasecmp (argv [1], "gbw" ) == 0)	{ doGbw (argc, argv) ; return 0 ; }
++#endif //ENABLE_GERTBOARD_COMPATIBILITY
+ 
+ // Check for -g argument
+ 
+@@ -1267,6 +1279,7 @@ int main (int argc, char *argv [])
+     wpMode = WPI_MODE_PHYS ;
+   }
+ 
++#ifdef ENABLE_PIFACE_COMPATIBILITY
+ // Check for -p argument for PiFace
+ 
+   else if (strcasecmp (argv [1], "-p") == 0)
+@@ -1278,6 +1291,7 @@ int main (int argc, char *argv [])
+     --argc ;
+     wpMode = WPI_MODE_PIFACE ;
+   }
++#endif //ENABLE_PIFACE_COMPATIBILITY
+ 
+ // Default to wiringPi mode
+ 
+diff --git a/gpio/version.h b/gpio/version.h
+index be8e84c..fd96a9b 100644
+--- a/gpio/version.h
++++ b/gpio/version.h
+@@ -1 +1 @@
+-#define VERSION "2.26"
++#define VERSION "2.25"
+diff --git a/wiringPi/CMakeLists.txt b/wiringPi/CMakeLists.txt
+new file mode 100644
+index 0000000..1855b69
+--- /dev/null
++++ b/wiringPi/CMakeLists.txt
+@@ -0,0 +1,28 @@
++cmake_minimum_required(VERSION 2.8)
++project(wiringPi CXX C)
++
++#Read version number and use it
++file(READ ../VERSION FILE_CONTENT)
++string(REGEX MATCH "[0-9]*[.][0-9]*([.][0-9]*)?" VERSION_NUMBER ${FILE_CONTENT})
++message(STATUS "Version number: ${VERSION_NUMBER}")
++
++#Add some flags
++set(CMAKE_CXX_FLAGS "-Wall -Werror")
++
++#Compile the library
++include_directories(${CMAKE_CURRENT_SOURCE_DIR})
++file(GLOB wiring_SRC *.c)
++add_library(wiringPi SHARED ${wiring_SRC})
++set_target_properties(wiringPi PROPERTIES VERSION ${VERSION_NUMBER})
++set(wiring_LIBRARIES wiringPi)
++
++#Install the files
++file(GLOB wiring_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.h)
++install(FILES ${wiring_HEADERS} DESTINATION include/wiringPi)
++
++install(TARGETS wiringPi LIBRARY DESTINATION lib)
++
++configure_file(wiringPi.pc.in ${CMAKE_CURRENT_BINARY_DIR}/wiringPi.pc @ONLY)
++install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wiringPi.pc DESTINATION lib/pkgconfig)
++configure_file(FindwiringPi.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/FindwiringPi.cmake @ONLY)
++install(FILES ${CMAKE_CURRENT_BINARY_DIR}/FindwiringPi.cmake DESTINATION share/cmake/Modules)
+diff --git a/wiringPi/FindwiringPi.cmake.in b/wiringPi/FindwiringPi.cmake.in
+new file mode 100644
+index 0000000..dddc21c
+--- /dev/null
++++ b/wiringPi/FindwiringPi.cmake.in
+@@ -0,0 +1,103 @@
++# Find the wiringPi module (this file is meant to be installed using make install)
++# Once found the following variables are set :
++#	wiringPi_FOUND		True to specify that the module has been found
++#
++#	wiringPi_INCLUDE_DIRS	Path(s) to the headers
++#
++#	wiringPi_LIBRARIES	Link these to use wiringPi
++
++# To help CMake in finding the wiringPi module
++# one can set the following variables :
++# wiringPi_DIR		Those variables can be either set using 'set' command of
++# or			CMake, or using '-D<var>=value' while calling CMake or 
++# wiringPi_ROOT		finally they can be set as environment variables.
++# or			Those three variables are aliases, so just set one is enough.
++# wiringPiROOT
++#
++# You can set any of them using one of the following methods :
++#	1) Set it as environnement varialbe (e.g. export)
++#	2) Give it as argument for cmake : cmake -DlibHATP_DIR="...."
++#	3) In a CMakeLists.txt, set a variable : set(libHATP_DIR ...)	
++
++#Varaibles to change if the module changes
++set(HEADER_FILES @wiring_HEADERS@)
++set(INCLUDE_PATH_SUFFIXES include include/wiringPi wiringPi)
++set(LIBRARIES @wiring_LIBRARIES@)
++set(CURRENT_PREFIX @CMAKE_INSTALL_PREFIX@)
++
++foreach(header ${HEADER_FILES})
++	find_path(${header}_PATH ${header} PATH_SUFFIXES ${INCLUDE_PATH_SUFFIXES}
++	HINTS ${CURRENT_PREFIX}
++	${wiringPi_DIR} ${wiringPi_ROOT} ${wiringPiROOT}
++	$ENV{wiringPi_DIR} $ENV{wiringPi_ROOT} $ENV{wiringPiROOT})
++	if(${header}_PATH)
++		list(APPEND wiringPi_INCLUDE_DIRS ${${header}_PATH})
++		unset(${header}_PATH CACHE)
++	else(${header}_PATH)
++		list(APPEND MISSING_HEADERS ${header})
++	endif(${header}_PATH)
++endforeach()
++
++if(wiringPi_INCLUDE_DIRS)
++	list(REMOVE_DUPLICATES wiringPi_INCLUDE_DIRS)
++endif(wiringPi_INCLUDE_DIRS)
++
++if(MISSING_HEADERS)
++	unset(wiringPi_INCLUDE_DIRS)
++endif(MISSING_HEADERS)
++
++find_library(wiringPi_LIBRARIES ${LIBRARIES} PATH_SUFFIXES lib
++	HINTS ${CURRENT_PREFIX}
++	${wiringPi_DIR} ${wiringPi_ROOT} ${wiringPiROOT}
++	$ENV{wiringPi_DIR} $ENV{wiringPi_ROOT} $ENV{wiringPiROOT})
++
++if(wiringPi_INCLUDE_DIRS AND wiringPi_LIBRARIES)
++	set(wiringPi_FOUND TRUE)
++else(wiringPi_INCLUDE_DIRS AND wiringPi_LIBRARIES)
++	if(NOT wiringPi_FIND_QUIETLY)
++		if(NOT wiringPi_INCLUDE_DIRS)
++			message(STATUS "Unable to find wiringPi, the following header files are missing : ${MISSING_HEADERS}")
++		else(NOT wiringPi_INCLUDE_DIRS)
++			message(STATUS "Header files found.")
++		endif(NOT wiringPi_INCLUDE_DIRS)
++		if(NOT wiringPi_LIBRARIES)
++			message(STATUS "Unable to find wiringPi library files !")
++		else(NOT wiringPi_LIBRARIES)
++			message(STATUS "Library files found.")
++		endif(NOT wiringPi_LIBRARIES)
++	endif(NOT wiringPi_FIND_QUIETLY)
++endif(wiringPi_INCLUDE_DIRS AND wiringPi_LIBRARIES)
++
++if(wiringPi_FOUND)
++	if(NOT wiringPi_FIND_QUIETLY)
++		message(STATUS "Found components for wiringPi")
++		message(STATUS "wiringPi_INCLUDE_DIRS = ${wiringPi_INCLUDE_DIRS}")
++		message(STATUS "wiringPi_LIBRARIES = ${wiringPi_LIBRARIES}")
++	endif(NOT wiringPi_FIND_QUIETLY)
++else(wiringPi_FOUND)
++	if(wiringPi_FIND_REQUIRED)
++		set(wiringPi_DIR "" CACHE PATH "Paths where to additionally look for
++		wiringPi (alias of wiringPi_ROOT and wiringPiROOT)")
++		set(wiringPi_ROOT "" CACHE PATH "Paths where to additionally look for
++		wiringPi (alias of wiringPi_DIR and wiringPiROOT)")
++		set(wiringPiROOT "" CACHE PATH "Paths where to additionally look for
++		wiringPi (alias of wiringPi_DIR and wiringPi_ROOT)")
++		if(NOT wiringPi_FIND_QUIETLY)
++			message("\nCould not find wiringPi!\n")
++			message("You can use any of the following variables to help CMake to find the header files and libraries :")
++			message("	wiringPi_DIR or wiringPi_ROOT or wiringPiROOT")
++			message("You should use one and set it to the root path of your local wiringPi install directory (if you installed it in a different folder than system root).")
++			message("To set one you can either :")
++			message("	- use 'set(wiringPi_DIR ....)' command in the CMakeLists.txt (separator ' ')")
++			message("	- use '-DwiringPi_DIR=....' as an option to Cmake (separator ';')")
++			message("	- set one as an environment variable (e.g. export in bash, with separator ';')\n")
++		endif(NOT wiringPi_FIND_QUIETLY)
++		message(FATAL_ERROR "Could not find wiringPi!")
++	endif(wiringPi_FIND_REQUIRED)
++endif(wiringPi_FOUND)
++
++mark_as_advanced (
++	wiringPi_FOUND
++	wiringPi_LIBRARIES
++	wiringPi_INCLUDE_DIRS
++)
+diff --git a/wiringPi/wiringPi.pc.in b/wiringPi/wiringPi.pc.in
+new file mode 100644
+index 0000000..5457ac7
+--- /dev/null
++++ b/wiringPi/wiringPi.pc.in
+@@ -0,0 +1,11 @@
++prefix=@CMAKE_INSTALL_PREFIX@
++exec_prefix=${prefix}
++libdir=${prefix}/lib
++includedir=${prefix}/include/wiringPi
++
++Name: wiringPi
++Description: Library to manipulate Raspberry Pi's GPIO
++Version: @VERSION_NUMBER@
++Libs: -L${libdir} -lwiringPi 
++Cflags: -I${includedir} 
++
+-- 
+1.9.1
+

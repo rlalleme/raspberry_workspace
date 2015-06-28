@@ -1,0 +1,168 @@
+How to have a ``cool'' cross compiler toolchain
+--------------------------------- by Raphaël Lallement
+
+
+Foreword
+--------
+
+Since the goal is to install a cross-compiling toolchain, all the commands must
+be executed on the computer with the toolchain ... not on the raspberry pi !
+
+
+
+1) Install a cross-compiling toolchain
+--------------------------------------
+
+I advise to follow those instructions:
+http://www.kitware.com/blog/home/post/426
+
+Even if dated this method works. Otherwise try:
+http://jeremy-nicola.info/portfolio-item/cross-compilation-distributed-compilation-for-the-raspberry-pi/
+(I have not tried it, can not guaranty it works.)
+
+
+
+2) Install WiringPi
+-------------------
+
+To install WiringPi, I advised not to follow the website, it requires super-user
+rights. Instead do as follow:
+
+* Create a directory where everything will be installed, a staging directory:
+> cd <your_raspberry_working_directory>
+> mkdir STAGING
+
+* Build and install the library
+> git clone git://git.drogon.net/wiringPi
+> cd wiringPi
+> cp <somewhere/else>/0001-ASTUPS-Use-the-CMake-build-system-instead-of-the-bui.patch .
+> git apply 0001-ASTUPS-Use-the-CMake-build-system-instead-of-the-bui.patch
+> mkdir build
+> cd build
+> cmake .. -DCMAKE_INSTALL_REPFIX=<your_raspberry_working_directory>/STAGING
+> make install
+
+NOTE:
+	- The patch (0001-ASTUPS...) is available in the repository presented in the next part.
+
+
+3) Prepare your project directory
+---------------------------------
+
+* Create directory that will contain all your projects, a workspace by pulling the repository:
+> cd <your_raspberry_working_directory>
+> git clone https://github.com/rlalleme/raspberry_workspace.git [<projects>]
+	The last parameter is optional and is the name you wish for your project directory to have.
+
+* Prepare your configuration file:
+In a file called raspberry.config:
+set(CMAKE_INSTALL_PREFIX "<path/to/directory/that/will/contain/the/installed/files>")
+set(CMAKE_C_COMPILER "<path/to/cross/compile/toolchain/gcc>")
+set(CMAKE_CXX_COMPILER "<path/to/cross/compile/toolchain/g++>")
+set(ENV{PKG_CONFIG_PATH} "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/:$ENV{PKG_CONFIG_PATH}")
+set(CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake/Modules")
+set(RASPBERRY_PI_HOST root@<ip_address>)
+set(RASPBERRY_PI_INSTALL_PREFIX "<path/on/the/raspberry/where/to/install>")
+
+NOTES:
+	- You can generate a template for this file by creating a project in the workspace and calling cmake.
+	- Difference between install directory and raspberry directory: the install directory is used when cross-compiling,
+	while the raspberry directory is used when actually installing the files to the raspberry.
+	- It is advised to create a directory next to or in the workspace where the files can be installed to,
+	for instance <your_raspberry_working_directory>/STAGING is a good choice.
+	- Usually <path/on/the/raspberry/where/to/install> should be "/root" since the user used to transfer is root.
+
+You are now ready to start !
+
+
+
+4) Create a package and compile
+-------------------------------
+
+* Create the layout of the project
+> cd <your_raspberry_working_directory>/<projects>
+> mkdir <new_project>
+> cd <new_project>
+> mkdir build
+
+* Prepare the CMake build system, in CMakeLists.txt:
+cmake_minimum_required(VERSION 2.8)
+project(<project_name> CXX C)
+
+include("../CMakeLists.txt")
+
+* Then add your files and create the targets to be compiled, for instance if you
+want an executable:
+add_executable(<target> <file.c/file.cpp>)
+target_link_libraries(<target> ${LIBS})
+allow_target_upload(<target>)
+
+* You can now compile and upload your target to the raspberry
+> make
+> make upload
+
+NOTES:
+	- See Appendix to create easy SSH configuration so you can have password-less remote copy.
+
+
+
+
+
+
+Appendix - A
+------------
+After the configuration your projects directory should be like this:
+
+<your_raspberry_working_directory>
+	|
+	+- <projects>
+	|	|
+	|	+- CMakeLists.txt
+	|	+- <your_config_file>
+	|	+- <project1>
+	|	|	|
+	|	|	+- CMakeLists.txt
+	|	|	+- <files.c/files.cpp/files.h/files.hpp>
+	|	|	+- build/
+	|	+- <project2>
+	|	|	...
+	|	...
+	|
+	+ STAGING
+	|	+- bin
+	|	+- include
+	|	+- include
+	|	...
+	+
+
+Appendix - B
+------------
+To have password-less SSH login and remote copies you need to use authentication keys.
+
+* First create a pair of keys
+> cd ~/.ssh
+> ssh-keygen -t rsa
+You will be prompted for the name of the output file, you can change it to contain "raspberry" in the name.
+You will also be prompted for a passphrase, do not input any just press enter (empty passphrase).
+
+* Then send the public key to the raspberry
+> scp <authentication_key>.pub <user>@<raspberry_ip_address>:.ssh/.
+(If it fails ssh to the raspberry and create the .ssh directory in the user's home directory.)
+
+* Then SSH to the raspberry and update the keys authorised to allow login
+> ssh <user>@<raspberry_ip_address>
+> cd .ssh
+> cat <authentication_key>.pub >> authorized_keys
+> chmod 0600 authorized_keys
+Then logout
+
+* Finally configure your computer
+> cd ~/.ssh
+Edit (and create if necessary) the file "config":
+Host 10.0.0.* 192.168.*
+	User <user>
+	IdentityFile ~/.ssh/<authentication_key>.pub
+
+The first line gives the list of possibles address for the raspberry.
+
+May need some tweaking if you try to connect to other machines in the same network.

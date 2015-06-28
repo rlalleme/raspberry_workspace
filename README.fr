@@ -1,0 +1,169 @@
+Comment obtenir une chaîne de cross-compilation qui soit « cool »
+-----------------------------------------------------par Raphaël Lallement
+
+
+Avant-propos
+------------
+
+L'objectif étant de créer un ensemble d'outils pour la cross-compilation, toutes
+les commandes doivent être exécutées sur votre ordinateur ... et non sur la 
+raspberry pi !
+
+
+
+1) Installer la chaîne de croos-compilation
+-------------------------------------------
+
+Je conseille pour cette étape de suivre les instructions de ce site : (en Anglais)
+http://www.kitware.com/blog/home/post/426
+
+Même si la méthode est un peu datée, elle marche. Sinon essayez : (en Anglais)
+http://jeremy-nicola.info/portfolio-item/cross-compilation-distributed-compilation-for-the-raspberry-pi/
+(Je n'ai pas essayé cette méthode, je ne peux donc pas garantir son 
+fonctionnement.)
+
+
+
+2) Installer WiringPi
+---------------------
+
+Afin d'installer WiringPi, je conseille de ne pas suivre le site officiel, en
+effet il nécessite des droits de super utilisateur. À la place faites :
+
+* Créez un répertoire où tout sera installé, un répertoire de « staging » :
+> cd <votre_dossier_de_travail_raspberry>
+> mkdir STAGING
+
+* Compilez et installez la librairie
+> git clone git://git.drogon.net/wiringPi
+> cd wiringPi
+> cp <somewhere/else>/0001-ASTUPS-Use-the-CMake-build-system-instead-of-the-bui.patch .
+> git apply 0001-ASTUPS-Use-the-CMake-build-system-instead-of-the-bui.patch
+> mkdir build
+> cd build
+> cmake .. -DCMAKE_INSTALL_REPFIX=<votre_dossier_de_travail_raspberry>/STAGING
+> make install
+
+REMARQUE :
+	- Le patch (0001-ASTUPS...) est disponible sur le répertoire de la partie suivante.
+
+3) Préparer votre espace de travail
+-----------------------------------
+
+* Créez un répertoire qui contiendra tous vos projets, l'espace de travail en récupérant le répertoire:
+> cd <votre_dossier_de_travail_raspberry>
+> git clone https://github.com/rlalleme/raspberry_workspace.git [<projets>]
+	Le dernier paramètre est optionnel et vous permet de choisir le nom du répertoire de travail.
+
+* Préparez votre fichier de configuration :
+Dans le fichier appelé raspberry.config :
+set(CMAKE_INSTALL_PREFIX "<chemin/d/installation/locale>")
+set(CMAKE_C_COMPILER "<chemin/de/la/chaîne/de/cross/compilation/compilateur-c>")
+set(CMAKE_CXX_COMPILER "<chemin/de/la/chaîne/de/cross/compilation/compilateur-c++>")
+set(ENV{PKG_CONFIG_PATH} "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/:$ENV{PKG_CONFIG_PATH}")
+set(CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake/Modules")
+set(RASPBERRY_PI_HOST <utilisateur>@<adresse_ip>)
+set(RASPBERRY_PI_INSTALL_PREFIX "<chemin/d/installation/sur/la/raspberry>")
+
+REMARQUES :
+	- Il est possible d'automatiquement générer ce fichier en créant un projet et en appelant cmake.
+	- La différence entre le chemin d'installation locale et celui de la raspberry : le locale est utilisé par la chaîne de cross-compilation
+	tandis que le chemin sur la raspberry est utilisé lors du déploiement.
+	- Il est conseillé de créer un dossier à côté ou dans l'espace de travail, les fichiers y seront installés,
+	par exemple <chemin/d/installation/locale>/STAGING est un bon choix.
+	- Habituellement <chemin/d/installation/sur/la/raspberry> sera "/root" car c'est l'utilisateur sur la raspberry.
+
+Vous êtes maintenant fin prêts à démarrer !
+
+
+
+4) Créer un paquet et le compiler
+---------------------------------
+
+* Préparez l'architecture du projet
+> cd <votre_dossier_de_travail_raspberry>/<projets>
+> mkdir <nouveau_projet>
+> cd <nouveau_projet>
+> mkdir build
+
+* Préparez le système de compilation CMake, dans un CMakeLists.txt:
+cmake_minimum_required(VERSION 2.8)
+project(<nom_du_projet> CXX C)
+
+include("../CMakeLists.txt")
+
+* Ensuite ajoutez vos fichiers et déclarer les cibles de compilations, par
+exemple si vous souhaitez ajouter un exécutable :
+add_executable(<cible> <fichier.c/fichier.cpp>)
+target_link_libraries(<cible> ${LIBS})
+allow_target_upload(<cible>)
+
+* Vous pouvez maintenant compiler et déploier la cible sur la raspberry
+> make
+> make upload
+
+REMARQUES :
+	- Voir les Annexes sur comment créer une configuration SSH pour permettre une copie sans mot de passe.
+
+
+
+
+
+
+Annexe - A
+----------
+À la fin de la configuration vous devriez avoir l'organisation suivante :
+
+<votre_dossier_de_travail_raspberry>
+	|
+	+- <projets>
+	|	|
+	|	+- CMakeLists.txt
+	|	+- <votre_fichier_de_configuration>
+	|	+- <projet1>
+	|	|	|
+	|	|	+- CMakeLists.txt
+	|	|	+- <fichiers.c/fichiers.cpp/fichiers.h/fichiers.hpp>
+	|	|	+- build/
+	|	+- <projet2>
+	|	|	...
+	|	...
+	|
+	+ STAGING
+	|	+- bin
+	|	+- include
+	|	+- include
+	|	...
+	+
+
+Annexe - B
+----------
+Afin d'avoir la possiblité de se connecter en SSH et de faire des copies distantes sans mots de passe il faut utiliser des clés d'authentifications.
+
+* Commencez par créer une paire de clés
+> cd ~/.ssh
+> ssh-keygen -t rsa
+Il vous sera demandé un nom de fichier, vous pouvez le changer pour qu'il contienne le nom "raspberry".
+Il vous sera aussi demander un mot de passe (passphrase), n'en donnez pas et tapez juste entrée (mot de passe vide).
+
+* Ensuite envoyez la clé publique sur la raspberry
+> scp <clé_d_authentification>.pub <utilisateur>@<adresse_ip_raspberry>:.ssh/.
+(Si ça ne marche pas il faut se connecter en SSH sur la raspberry est créer un dossier .ssh dans le dossier home de l'utilisateur.)
+
+* Ensuite connectez vous en SSH et mettez à jour les clés autorisées pour permettre les connections
+> ssh <utilisateur>@<adresse_ip_raspberry>
+> cd .ssh
+> cat <clé_d_authentification>.pub >> authorized_keys
+> chmod 0600 authorized_keys
+Puis déconnectez vous.
+
+* Pour finir, configurez votre ordinateur
+> cd ~/.ssh
+Éditez (et créer si nécessaire) le fichier "config":
+Host 10.0.0.* 192.168.*
+	User <utilisateur>
+	IdentityFile ~/.ssh/<clé_d_authentification>.pub
+
+La première ligne donne la liste des adresses possibles pour la raspberry.
+
+Il peut être nécessaire de modifier cette configuration pour marcher avec d'autres machines sur le même réseau.
