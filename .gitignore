@@ -4,3 +4,4 @@
 !README.fr
 !CMakeLists.txt
 !0001-ASTUPS-Use-the-CMake-build-system-instead-of-the-bui.patch
+!template.CMakeLists.txt

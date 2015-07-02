@@ -30,7 +30,6 @@
 #
 # Author: Raphaël Lallement - raphael [dot] lallement [at] laposte [dot] net
 
-
 cmake_minimum_required(VERSION 2.8)
 
 #Detect the config file (or create it if not existing)
@@ -41,17 +40,13 @@ if(NOT EXISTS "${CONFIG_FILE}")
 	file(WRITE "${CONFIG_FILE}" "set(CMAKE_INSTALL_PREFIX \"<path/to/raspberry/install>\")\n")
 	file(APPEND "${CONFIG_FILE}" "set(CMAKE_C_COMPILER \"unknown\")\n")
 	file(APPEND "${CONFIG_FILE}" "set(CMAKE_CXX_COMPILER \"unknown\")\n")
-	file(APPEND "${CONFIG_FILE}" "set(ENV{PKG_CONFIG_PATH} \"\${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/:\$ENV{PKG_CONFIG_PATH}\")\n")
+#	file(APPEND "${CONFIG_FILE}" "set(ENV{PKG_CONFIG_PATH} \"\${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/:\$ENV{PKG_CONFIG_PATH}\")\n")
 	file(APPEND "${CONFIG_FILE}" "set(CMAKE_MODULE_PATH \"\${CMAKE_INSTALL_PREFIX}/share/cmake/Modules\")\n")
 	file(APPEND "${CONFIG_FILE}" "set(RASPBERRY_PI_HOST root@<ip_address>)\n")
 	file(APPEND "${CONFIG_FILE}" "set(RASPBERRY_PI_INSTALL_PREFIX \"/root\")\n")
 endif(NOT EXISTS "${CONFIG_FILE}")
 include("${CONFIG_FILE}")
-
-#Check that the project name is already declared
-if(NOT PROJECT_NAME)
-	message(FATAL_ERROR "\nInclude the CMakeLists.txt of the raspberry workspace AFTER you decalre your project (it needs a project name)")
-endif(NOT PROJECT_NAME)
+message(STATUS "Use config file: ${CONFIG_FILE}")
 
 #VERIFY that both C and C++ compilers are ARM cross compilers
 execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpspecs
@@ -67,13 +62,13 @@ execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpspecs
 
 if(IS_CXX_CROSS_COMPILER EQUAL "0" AND IS_C_CROSS_COMPILER EQUAL "0")
 	execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpspecs
-		COMMAND fgrep -A 1 "*multilib_defaults" 
+#		COMMAND fgrep -A 1 "*multilib_defaults" 
 		COMMAND grep -q "arm"
 		RESULT_VARIABLE CXX_ARM_CROSS_COMPILER_FOUND
 	)
 
 	execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpspecs
-		COMMAND fgrep -A 1 "*multilib_defaults" 
+#		COMMAND fgrep -A 1 "*multilib_defaults" 
 		COMMAND grep -q "arm"
 		RESULT_VARIABLE C_ARM_CROSS_COMPILER_FOUND
 	)
@@ -85,13 +80,12 @@ else(IS_CXX_CROSS_COMPILER EQUAL "0" AND IS_C_CROSS_COMPILER EQUAL "0")
 	message(FATAL_ERROR "\nThis CMake file should not be used with something that is not a C/C++ cross compiler")
 endif(IS_CXX_CROSS_COMPILER EQUAL "0" AND IS_C_CROSS_COMPILER EQUAL "0")
 
-
 #Include PkgConfig to find wiringPi, and PThread to link with it correctly
-find_package(PkgConfig REQUIRED)
+enable_language(C CXX)
 find_package(Threads REQUIRED)
+find_package(wiringPi REQUIRED)
 
 #Import the wiringPi library
-pkg_check_modules(wiringPi REQUIRED wiringPi)
 include_directories(${wiringPi_INCLUDE_DIRS})
 set(LIBS ${wiringPi_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 link_directories(${wiringPi_LIBRARY_DIRS})
@@ -105,6 +99,11 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 add_custom_target(upload COMMENT "Upload all the targets to the raspberry" VERBATIM)
 
 macro(allow_target_upload TARGET)
+	#Check that the project name is already declared
+	if(NOT PROJECT_NAME)
+		message(FATAL_ERROR "\nInclude the CMakeLists.txt of the raspberry workspace AFTER you decalre your project (it needs a project name)")
+	endif(NOT PROJECT_NAME)
+
 	if(NOT RASPBERRY_PI_HOST)
 		message(AUTHOR_WARNING "\nThe raspberry pi host has not be defined for this project, please use \"set(RASPBERRY_PI_HOST <user@ip_address>)\" to fix this issue\n")
 	else(NOT RASPBERRY_PI_HOST)
@@ -114,7 +113,7 @@ macro(allow_target_upload TARGET)
 		if(version)
 			message(AUTHOR_WARNING "\nThe target \"${TARGET}\" should not have a version number\n")
 		endif(version)
-		
+
 		add_custom_target(upload_${TARGET} scp $<TARGET_FILE:${TARGET}> ${RASPBERRY_PI_HOST}:${RASPBERRY_PI_INSTALL_PREFIX}/${PROJECT_NAME}/. COMMENT "Upload the target \"${TARGET}\" to the raspberry" VERBATIM)
 		add_dependencies(upload upload_${TARGET} ${TARGET})
 	endif(NOT RASPBERRY_PI_HOST)

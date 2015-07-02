@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 2.8)
+include("../CMakeLists.txt")
+
+project(<project_name>)
+
+add_executable(<executable_name> <sourde_code>)
+target_link_libraries(<executable_name> ${LIBS})
+allow_target_upload(<executable_name>)
